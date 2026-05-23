@@ -1,0 +1,1149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Draft Predict</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Anton&display=swap" rel="stylesheet">
+<link href="https://api.fontshare.com/v2/css?f[]=general-sans@700&display=swap" rel="stylesheet">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+  width: 1920px; height: 1080px;
+  overflow: hidden;
+  background: transparent;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ═══════════════════════════════════
+   PANELS
+═══════════════════════════════════ */
+.draft-panel {
+  position: absolute;
+  bottom: 0;
+  width: 758px;
+  height: 136px;
+}
+#blue-panel {
+  left: 0;
+  transform: translateY(136px);
+  transition: transform .45s cubic-bezier(.4,0,.2,1);
+}
+#red-panel {
+  right: 0;
+  transform: translateY(136px);
+  transition: transform .45s cubic-bezier(.4,0,.2,1);
+}
+#blue-panel.visible { transform: none; }
+#red-panel.visible  { transform: none; }
+/* instant swap for programmatic slot transitions */
+#blue-panel.no-anim,
+#red-panel.no-anim  { transition: none !important; }
+
+/* Header */
+.panel-header {
+  height: 26px;
+  display: flex; align-items: center;
+  padding: 0 12px;
+  position: relative; z-index: 2;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.45);
+}
+#blue-panel .panel-header { background: #004dd5; justify-content: flex-end; }
+#red-panel  .panel-header { background: #f31400; justify-content: flex-start; }
+
+.header-text {
+  font-family: 'General Sans', 'Arial Black', sans-serif;
+  font-weight: 700;
+  font-size: 19px; /* 4.5pt @ 300dpi */
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: #fff;
+  white-space: nowrap;
+}
+/* type spans inherit white from .header-text */
+
+/* Card area */
+.panel-body {
+  height: 110px;
+  background: #161616;
+  position: relative;
+  overflow: hidden;
+}
+
+.carousel-viewport {
+  position: absolute; inset: 0;
+  overflow: hidden;
+}
+
+/* GPU-composited gradient overlays — sit above will-change:transform card layers */
+.fade-edge {
+  position: absolute; top: 0; bottom: 0;
+  width: 60px; z-index: 10;
+  pointer-events: none;
+  transform: translateZ(0);
+}
+.fade-edge-l { left: 0;  background: linear-gradient(to right, #161616, transparent); }
+.fade-edge-r { right: 0; background: linear-gradient(to left,  #161616, transparent); }
+
+/* ═══════════════════════════════════
+   HERO CARDS  80 × 110
+═══════════════════════════════════ */
+.hero-card {
+  position: absolute; top: 0; left: 0;
+  width: 80px; height: 110px;
+  background: #fefefe;
+  will-change: transform;
+  transition: filter .35s; /* opacity is driven per-frame by JS for edge fade */
+}
+.portrait-wrap {
+  position: relative;
+  width: 80px; height: 87px;
+  overflow: hidden;
+  background: #1c1c1c;
+  border-radius: 0;
+}
+.portrait-wrap img {
+  width: 100%; height: 100%;
+  object-fit: cover; object-position: center top;
+  display: block;
+}
+.portrait-fallback {
+  width: 100%; height: 100%;
+  display: none; align-items: center; justify-content: center;
+  font-size: 26px; font-weight: 900; color: rgba(255,255,255,.1);
+}
+/* inset stroke on hero portrait — pseudo-element sits above image */
+.portrait-wrap::before {
+  content: '';
+  position: absolute; inset: 0;
+  border: 2px solid rgba(22,22,22,0.7);
+  z-index: 3;
+  pointer-events: none;
+}
+/* rank badge — colored circle, top-left of portrait */
+.rank-badge {
+  position: absolute; top: 4px; left: 4px;
+  width: 20px; height: 20px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  z-index: 4;
+}
+/* Top 5 ranks use the side's header color; 6–10 use dark */
+#blue-panel .rank-badge.rank-top { background: #004dd5; }
+#red-panel  .rank-badge.rank-top { background: #f31400; }
+.rank-badge.rank-low { background: #161616; }
+.rank-num {
+  font-family: 'Anton', 'Impact', sans-serif;
+  font-size: 12px; /* 2.9pt @ 300dpi */
+  color: #fff;
+  line-height: 1;
+}
+.pct-area {
+  width: 80px; height: 23px;
+  display: flex; align-items: center; justify-content: center;
+  background: #fefefe;
+}
+.pct-text {
+  font-family: 'Anton', 'Impact', sans-serif;
+  font-size: 15px; /* 3.5pt @ 300dpi */
+  letter-spacing: .5px;
+}
+#blue-panel .pct-text { color: #004dd5; }
+#red-panel  .pct-text { color: #f31400; }
+
+/* ── States ── */
+.hero-card.dimmed {
+  opacity: .18;
+  filter: grayscale(1) brightness(.4);
+}
+.hero-card.pressing {
+  transform: translateX(var(--tx,0px)) scale(.91) translateY(3px) !important;
+  transition: transform .07s ease-in !important;
+}
+.hero-card.chosen {
+  z-index: 10;
+  opacity: 1 !important; filter: none !important;
+  transform: translateX(var(--tx,0px)) scale(1.10) translateY(-4px) !important;
+  transition: transform .4s cubic-bezier(.34,1.56,.64,1) !important;
+}
+.hero-card.chosen .portrait-wrap::before {
+  border-color: #f0c040;
+  box-shadow: 0 0 14px rgba(240,192,64,.6), 0 0 32px rgba(240,192,64,.25);
+}
+.hero-card.chosen .rank-badge { transform: translateY(8px); }
+.hero-card.chosen .pct-text { color: #161616 !important; }
+.hero-card.chosen .portrait-wrap::after {
+  content: ''; position: absolute; inset: 0;
+  background: linear-gradient(105deg, transparent 30%, rgba(240,192,64,.35) 50%, transparent 70%);
+  animation: shimmer 1.5s ease infinite;
+}
+@keyframes shimmer {
+  0%   { transform: translateX(-120%); }
+  100% { transform: translateX(220%); }
+}
+
+/* ═══════════════════════════════════
+   DEBUG PANEL
+═══════════════════════════════════ */
+#debug {
+  position: fixed; top: 0; right: 0;
+  width: 460px; height: 100vh; overflow-y: auto;
+  background: rgba(8,10,16,.97);
+  border-left: 1px solid rgba(255,255,255,.08);
+  padding: 16px;
+  font-family: 'Menlo','Monaco','Consolas',monospace;
+  font-size: 11px; color: #888;
+  display: none; z-index: 2000;
+}
+#debug.visible { display: block; }
+#debug h3 {
+  font-size: 10px; font-weight: 700; letter-spacing: 3px;
+  text-transform: uppercase; color: rgba(255,255,255,.35);
+  margin-bottom: 14px; padding-bottom: 10px;
+  border-bottom: 1px solid rgba(255,255,255,.07);
+}
+.dsec {
+  margin-bottom: 12px; padding: 10px 10px 12px;
+  background: rgba(255,255,255,.03);
+  border: 1px solid rgba(255,255,255,.06); border-radius: 7px;
+}
+.dsec-title {
+  font-size: 8.5px; font-weight: 700; letter-spacing: 2px;
+  text-transform: uppercase; color: rgba(255,255,255,.25); margin-bottom: 8px;
+}
+.debug-row {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 5px; margin-bottom: 6px;
+}
+#debug input[type="text"], #debug input[type="number"] {
+  flex: 1; min-width: 0;
+  background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.12);
+  color: #fff; padding: 5px 8px; border-radius: 5px;
+  font-family: monospace; font-size: 10px; outline: none;
+}
+#debug input:focus { border-color: rgba(77,166,255,.5); }
+.dbtn {
+  background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.14);
+  color: rgba(255,255,255,.8); padding: 5px 11px; border-radius: 5px; cursor: pointer;
+  font-size: 10px; font-family: monospace; white-space: nowrap;
+}
+.dbtn:hover { background: rgba(255,255,255,.14); }
+.dbtn.blue { background: rgba(30,80,200,.25); border-color: rgba(77,150,255,.3); color: #6ab0ff; }
+.dbtn.red  { background: rgba(160,20,0,.25);  border-color: rgba(255,80,60,.3);  color: #ff7070; }
+.dbtn.gold { background: rgba(180,140,0,.2);  border-color: rgba(240,192,64,.3); color: #f0c040; }
+#anim-test-grid {
+  display: grid; grid-template-columns: repeat(5,1fr); gap: 4px; margin-top: 4px;
+}
+.anim-chip {
+  background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.1);
+  border-radius: 4px; padding: 4px 3px; cursor: pointer; text-align: center;
+}
+.anim-chip:hover { background: rgba(240,192,64,.15); border-color: rgba(240,192,64,.3); }
+.anim-chip-rank { font-size: 8px; color: rgba(255,255,255,.3); }
+.anim-chip-name { font-size: 8.5px; font-weight: 700; color: rgba(255,255,255,.7); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#debug-status {
+  padding: 8px 10px; background: rgba(255,255,255,.03);
+  border-radius: 6px; border: 1px solid rgba(255,255,255,.05);
+  line-height: 1.8; font-size: 10px;
+}
+.ok { color: #4caf50; } .err { color: #f44336; } .warn { color: #ff9800; }
+#slot-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+.slot-chip {
+  display: flex; align-items: center; gap: 5px;
+  padding: 5px 8px; border-radius: 5px; cursor: pointer;
+  border: 1px solid transparent; font-size: 10px;
+}
+.slot-chip.blue { background: rgba(26,80,200,.15); border-color: rgba(77,150,255,.2); }
+.slot-chip.blue:hover { background: rgba(26,80,200,.3); }
+.slot-chip.red  { background: rgba(160,20,0,.15);  border-color: rgba(255,70,50,.2); }
+.slot-chip.red:hover  { background: rgba(160,20,0,.3); }
+.slot-chip.active { outline: 1px solid #f0c040; }
+.slot-chip-num { font-size: 9px; font-weight: 900; background: rgba(0,0,0,.4); border-radius: 3px; padding: 1px 5px; }
+.slot-chip.blue .slot-chip-num { color: #4da6ff; }
+.slot-chip.red  .slot-chip-num { color: #ff5555; }
+.slot-chip-info { flex: 1; }
+.slot-chip-type { font-size: 8px; font-weight: 900; letter-spacing: 1.5px; text-transform: uppercase; }
+.slot-chip.blue .slot-chip-type { color: #4da6ff; }
+.slot-chip.red  .slot-chip-type { color: #ff5555; }
+.slot-chip-team { font-size: 9px; font-weight: 700; color: rgba(255,255,255,.5); text-transform: uppercase; }
+.slot-phase-label {
+  grid-column: 1/-1; font-size: 8px; font-weight: 700; letter-spacing: 2px;
+  text-transform: uppercase; color: rgba(255,255,255,.2);
+  padding: 4px 0 2px; border-top: 1px solid rgba(255,255,255,.06); margin-top: 3px;
+}
+.slot-phase-label:first-child { border-top: none; margin-top: 0; }
+#speed-slider { flex: 1; accent-color: #4da6ff; cursor: pointer; }
+#speed-val { font-size: 11px; font-weight: 700; color: #4da6ff; min-width: 28px; text-align: right; }
+#debug-json {
+  margin-top: 8px; padding: 8px; background: rgba(0,0,0,.3);
+  border-radius: 5px; border: 1px solid rgba(255,255,255,.05);
+  max-height: 200px; overflow-y: auto;
+  white-space: pre-wrap; word-break: break-all; font-size: 9px; color: #555;
+}
+</style>
+</head>
+<body>
+
+<!-- ══ BLUE PANEL (left edge) ══ -->
+<div id="blue-panel" class="draft-panel">
+  <div class="panel-header">
+    <span class="header-text" id="blue-header-text">DRAFT PREDICT</span>
+  </div>
+  <div class="panel-body">
+    <div class="carousel-viewport" id="blue-viewport"></div>
+    <div class="fade-edge fade-edge-l"></div>
+    <div class="fade-edge fade-edge-r"></div>
+  </div>
+</div>
+
+<!-- ══ RED PANEL (right edge) ══ -->
+<div id="red-panel" class="draft-panel">
+  <div class="panel-header">
+    <span class="header-text" id="red-header-text">DRAFT PREDICT</span>
+  </div>
+  <div class="panel-body">
+    <div class="carousel-viewport" id="red-viewport"></div>
+    <div class="fade-edge fade-edge-l"></div>
+    <div class="fade-edge fade-edge-r"></div>
+  </div>
+</div>
+
+<!-- ══ DEBUG ══ -->
+<div id="debug">
+  <h3>◆ Draft Predict — Debug</h3>
+
+  <div class="dsec">
+    <div class="dsec-title">Server Host</div>
+    <div class="debug-row">
+      <input type="text" id="server-host" placeholder="localhost:3000"
+        oninput="localStorage.setItem('draftpredict_server',this.value.trim())">
+    </div>
+  </div>
+
+  <div class="dsec">
+    <div class="dsec-title">API Endpoint</div>
+    <div class="debug-row">
+      <input type="text" id="api-url"
+        value="http://localhost:3000/proxy/predictions?authKey=18a86b9d-a35f-40d9-94ce-726779b3514a&judgeId=1370583970">
+    </div>
+    <div class="debug-row" style="margin-top:4px">
+      <button class="dbtn blue" onclick="fetchLive()">Fetch</button>
+      <span style="color:rgba(255,255,255,.3);font-size:9px">poll every</span>
+      <input type="number" id="poll-ms" value="3000" style="width:55px;flex:none">
+      <span style="color:rgba(255,255,255,.2);font-size:9px">ms</span>
+      <button class="dbtn" onclick="restartPoller()">Start</button>
+      <button class="dbtn red" onclick="stopPoller()">Stop</button>
+    </div>
+  </div>
+
+  <div class="dsec">
+    <div class="dsec-title">Status</div>
+    <div id="debug-status"><span class="warn">● Waiting…</span></div>
+  </div>
+
+  <div class="dsec" id="slot-nav-sec" style="display:none">
+    <div class="dsec-title">Captain's Mode — Slot Navigator</div>
+    <div id="slot-grid"></div>
+  </div>
+
+  <div class="dsec">
+    <div class="dsec-title">Roulette Speed</div>
+    <div class="debug-row">
+      <span style="color:rgba(255,255,255,.35);font-size:9px">SLOW</span>
+      <input type="range" id="speed-slider" min="0.3" max="6" step="0.1" value="0.5"
+        oninput="scrollSpeed=+this.value;document.getElementById('speed-val').textContent=this.value">
+      <span style="color:rgba(255,255,255,.35);font-size:9px">FAST</span>
+      <span id="speed-val">0.5</span>
+    </div>
+  </div>
+
+  <div class="dsec" id="anim-test-sec" style="display:none">
+    <div class="dsec-title">Test Pick Animation — click a hero</div>
+    <div id="anim-test-grid"></div>
+    <div class="debug-row" style="margin-top:8px">
+      <button class="dbtn" onclick="resetActiveCarousel()">Reset (resume roulette)</button>
+    </div>
+  </div>
+
+  <div class="dsec">
+    <div class="dsec-title">Controls</div>
+    <div class="debug-row">
+      <button class="dbtn blue" onclick="userHidden=false;if(!pollTimer)restartPoller();const _l=activeData?.predictions?.slice(-1)[0];if(_l)renderPrediction(_l,activeData);else if(activePanel){showPanel(activePanel,true);getActiveCarousel()?.startRoulette();}">Show</button>
+      <button class="dbtn red"  onclick="hideAll();">Hide</button>
+    </div>
+  </div>
+
+  <div class="dsec">
+    <div class="dsec-title">Last Payload (raw)</div>
+    <div id="debug-json">(none)</div>
+  </div>
+</div>
+
+
+<script>
+// ════════════════════════════════════════════
+//  HERO CONVERSIONS
+// ════════════════════════════════════════════
+const HERO_CONVERSIONS = {
+  1:"687742bd48e2c33fba3105cb",   2:"687742e248e2c33fba3105dc",
+  3:"6877446048e2c33fba3105e1",   4:"6877446e48e2c33fba3105e6",
+  5:"6877450c48e2c33fba3105eb",   6:"6877451448e2c33fba3105f0",
+  7:"6877457848e2c33fba3105f5",   8:"6877458248e2c33fba3105fa",
+  9:"6877458b48e2c33fba3105ff",  10:"6877459448e2c33fba310604",
+  11:"6877464148e2c33fba310609", 12:"6877464948e2c33fba31060e",
+  13:"6877465148e2c33fba310613", 14:"6877465b48e2c33fba310618",
+  15:"6877466648e2c33fba31061d", 16:"6877467048e2c33fba310622",
+  17:"6877467748e2c33fba310627", 18:"6877468248e2c33fba31062c",
+  19:"6877469348e2c33fba310631", 20:"6877469f48e2c33fba310636",
+  21:"687746f848e2c33fba31063b", 22:"6877470048e2c33fba310640",
+  23:"6877470748e2c33fba310645", 24:"6877471148e2c33fba31064a",
+  25:"6877471748e2c33fba31064f", 26:"6877472348e2c33fba310654",
+  27:"6877472a48e2c33fba310659", 28:"6877473048e2c33fba31065e",
+  29:"6877473648e2c33fba310663", 30:"6877474348e2c33fba310668",
+  31:"6877475a48e2c33fba31066d", 32:"6877476548e2c33fba310672",
+  33:"6877476f48e2c33fba310677", 34:"6877477c48e2c33fba31067c",
+  35:"6877478448e2c33fba310681", 36:"6877478a48e2c33fba310686",
+  37:"6877479a48e2c33fba31068b", 38:"687747a448e2c33fba310690",
+  39:"687747ad48e2c33fba310695", 40:"687747b648e2c33fba31069a",
+  41:"687747cd48e2c33fba31069f", 42:"687747d748e2c33fba3106a4",
+  43:"687747df48e2c33fba3106a9", 44:"687747ed48e2c33fba3106ae",
+  45:"687747f348e2c33fba3106b3", 46:"687747fd48e2c33fba3106b8",
+  47:"6877480448e2c33fba3106bd", 48:"6877480a48e2c33fba3106c2",
+  49:"6877481348e2c33fba3106c7", 50:"6877481948e2c33fba3106cc",
+  51:"6877485d48e2c33fba3106d1", 52:"6877486448e2c33fba3106d6",
+  53:"6877487048e2c33fba3106db", 54:"6877487848e2c33fba3106e0",
+  55:"6877487f48e2c33fba3106e5", 56:"6877488a48e2c33fba3106ea",
+  57:"6877489048e2c33fba3106ef", 58:"6877489948e2c33fba3106f4",
+  59:"687748a348e2c33fba3106f9", 60:"687748ab48e2c33fba3106fe",
+  61:"68774f2248e2c33fba310703", 62:"68774f3048e2c33fba310708",
+  63:"68774f5248e2c33fba31070d", 64:"68774f5c48e2c33fba310712",
+  65:"68774f6348e2c33fba310717", 66:"68774f6d48e2c33fba31071c",
+  67:"68774f7348e2c33fba310721", 68:"68774f7b48e2c33fba310726",
+  69:"68774f8848e2c33fba31072b", 70:"68774f9048e2c33fba310730",
+  71:"68774fb648e2c33fba310735", 72:"68774fbc48e2c33fba31073a",
+  73:"68774fc248e2c33fba31073f", 74:"68774fde48e2c33fba310744",
+  75:"68774fe948e2c33fba310749", 76:"68774ffa48e2c33fba31074e",
+  77:"6877500648e2c33fba310753", 78:"6877501c48e2c33fba310758",
+  79:"6877504348e2c33fba31075d", 80:"6877504b48e2c33fba310762",
+  81:"6877506448e2c33fba310767", 82:"6877506d48e2c33fba31076c",
+  83:"6877507548e2c33fba310771", 84:"6877507d48e2c33fba310776",
+  85:"6877508548e2c33fba31077b", 86:"6877509a48e2c33fba310780",
+  87:"687750a048e2c33fba310785", 88:"687750ac48e2c33fba31078a",
+  89:"687750b448e2c33fba31078f", 90:"687750e448e2c33fba310794",
+  91:"6877511448e2c33fba310799", 92:"6877511d48e2c33fba31079e",
+  93:"6877512348e2c33fba3107a3", 94:"6877512f48e2c33fba3107a8",
+  95:"6877513548e2c33fba3107ad", 96:"6877513e48e2c33fba3107b2",
+  97:"6877514b48e2c33fba3107b7", 98:"6877515948e2c33fba3107bc",
+  99:"6877516348e2c33fba3107c1",100:"6877516948e2c33fba3107c6",
+  101:"6877517948e2c33fba3107cb",102:"6877518348e2c33fba3107d0",
+  103:"6877518c48e2c33fba3107d5",104:"6877519548e2c33fba3107da",
+  105:"6877519c48e2c33fba3107df",106:"687751a648e2c33fba3107e4",
+  107:"687751ac48e2c33fba3107e9",108:"687751b248e2c33fba3107ee",
+  109:"687751ba48e2c33fba3107f3",110:"687751c148e2c33fba3107f8",
+  111:"687751d248e2c33fba3107fd",112:"687751d948e2c33fba310802",
+  113:"687751e048e2c33fba310807",114:"687751f548e2c33fba31080c",
+  115:"687751ff48e2c33fba310811",116:"6877521248e2c33fba310816",
+  117:"6877521d48e2c33fba31081b",118:"6877522248e2c33fba310820",
+  119:"6877522948e2c33fba310825",120:"6877523348e2c33fba31082a",
+  121:"6877523e48e2c33fba31082f",122:"6877524548e2c33fba310834",
+  123:"6877524b48e2c33fba310839",124:"6877525648e2c33fba31083e",
+  125:"6877525c48e2c33fba310843",126:"6877526848e2c33fba310848",
+  127:"6877527048e2c33fba31084d",128:"6877527848e2c33fba310852",
+  129:"6877528248e2c33fba310857",130:"68db3281bd5465287b6368ed",
+  131:"698d8537c3211cefa4eeb1e6",132:"69f1b9a8794458c796181eef"
+};
+const HERO_ID_TO_NUM = {};
+for (const [n, id] of Object.entries(HERO_CONVERSIONS)) HERO_ID_TO_NUM[id] = parseInt(n);
+function heroImgSrc(heroId) {
+  const n = HERO_ID_TO_NUM[heroId];
+  return n ? `hero/HERO_${n}_KOTAK.png` : null;
+}
+
+// ════════════════════════════════════════════
+//  CAROUSEL ENGINE
+// ════════════════════════════════════════════
+const CARD_W = 85;  // 80px card + 5px gap
+let scrollSpeed = 0.5;
+
+function fmtPct(p) {
+  return `${p.toFixed(2)}%`;
+}
+
+function createCarousel(viewportEl, direction) {
+  // direction: -1 = scrolls right (Blue), +1 = scrolls left (Red)
+  const c = {
+    viewport: viewportEl,
+    direction,
+    cardEls: [],
+    cardOffsets: [],
+    scrollPos: 0,
+    state: 'stopped',
+    raf: null,
+    pickedIdx: -1,
+    clearTimer: null,
+    onPickDone: null,
+    isAnimating: false,
+  };
+
+  const FADE_PX = 55; // px of fade zone on each edge
+
+  function applyPositions() {
+    const viewW = c.viewport.offsetWidth;
+    const N = c.cardEls.length;
+    if (!N) return;
+    const SET_W = N * CARD_W;
+    const inMotion = c.state === 'roulette' || c.state === 'settling';
+
+    c.cardEls.forEach((el, i) => {
+      let x = c.cardOffsets[i] - c.scrollPos;
+      if (x + CARD_W < 0) { c.cardOffsets[i] += SET_W; x += SET_W; }
+      if (x > viewW)      { c.cardOffsets[i] -= SET_W; x -= SET_W; }
+      el.style.setProperty('--tx', `${x}px`);
+      el.style.transform = `translateX(${x}px)`;
+
+      // Fade only on the ENTRY side — exit is handled naturally by overflow:hidden.
+      // Blue (direction=-1) scrolls right: cards enter from the left → fade on left.
+      // Red  (direction=+1) scrolls left : cards enter from the right → fade on right.
+      if (inMotion) {
+        const t = c.direction === -1
+          ? Math.min(1, Math.max(0, (x + FADE_PX) / FADE_PX))  // fade off-screen left [-55,0]
+          : Math.min(1, Math.max(0, (viewW - x) / FADE_PX));    // right-entry fade
+        el.style.opacity = t;
+      } else {
+        el.style.opacity = ''; // clear — CSS .dimmed / .chosen take over
+      }
+    });
+  }
+
+  function tick() {
+    const viewW = c.viewport.offsetWidth;
+    if (c.state === 'roulette') {
+      c.scrollPos += c.direction * scrollSpeed;
+    } else if (c.state === 'settling') {
+      const targetX = viewW / 2 - CARD_W / 2;
+      const targetScroll = c.cardOffsets[c.pickedIdx] - targetX;
+      const diff = targetScroll - c.scrollPos;
+      c.scrollPos += diff * 0.10;
+      if (Math.abs(diff) < 0.6) {
+        c.scrollPos = targetScroll;
+        c.state = 'picked';
+        applyPositions();
+        triggerPress();
+        return;
+      }
+    }
+    applyPositions();
+    if (c.state === 'roulette' || c.state === 'settling') {
+      c.raf = requestAnimationFrame(tick);
+    }
+  }
+
+  function triggerPress() {
+    const chosen = c.cardEls[c.pickedIdx];
+    if (!chosen) return;
+    c.cardEls.forEach((el, i) => {
+      if (i !== c.pickedIdx) el.classList.add('dimmed');
+    });
+    chosen.classList.add('pressing');
+    setTimeout(() => {
+      chosen.classList.remove('pressing');
+      chosen.classList.add('chosen');
+    }, 90);
+    c.clearTimer = setTimeout(() => {
+      c.cardEls.forEach(el => el.classList.remove('dimmed','pressing','chosen'));
+      c.isAnimating = false;
+      if (c.onPickDone) c.onPickDone();
+    }, c._clearMs || 4500);
+  }
+
+  c.init = function(candidates) {
+    viewportEl.innerHTML = '';
+    c.cardEls = [];
+    c.cardOffsets = [];
+    c.scrollPos = 0;
+    const viewW = viewportEl.offsetWidth;
+    const N = candidates.length;
+    candidates.forEach((cand, i) => {
+      const src = heroImgSrc(cand.heroId);
+      const el = document.createElement('div');
+      el.className = 'hero-card';
+      el.dataset.heroId = cand.heroId;
+      el.innerHTML = `
+        <div class="portrait-wrap">
+          ${src
+            ? `<img src="${src}" alt=""
+                 onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">`
+            : ''}
+          <div class="portrait-fallback" style="${src ? '' : 'display:flex'}">${cand.heroName[0]}</div>
+          <div class="rank-badge ${i < 5 ? 'rank-top' : 'rank-low'}"><span class="rank-num">${i + 1}</span></div>
+        </div>
+        <div class="pct-area">
+          <span class="pct-text">${fmtPct(cand.probability)}</span>
+        </div>`;
+      viewportEl.appendChild(el);
+      c.cardEls.push(el);
+      c.cardOffsets.push(i * CARD_W);
+    });
+    const startOffset = viewW / 2 - (N * CARD_W) / 2;
+    c.cardOffsets = c.cardOffsets.map(o => o + startOffset);
+    applyPositions();
+  };
+
+  c.startRoulette = function() {
+    cancelAnimationFrame(c.raf);
+    clearTimeout(c.clearTimer);
+    c.cardEls.forEach(el => {
+      el.classList.remove('dimmed','pressing','chosen');
+      el.style.opacity = ''; // clear stale inline opacity before rAF takes over
+    });
+    c.state = 'roulette';
+    c.isAnimating = false;
+    c.raf = requestAnimationFrame(tick);
+  };
+
+  c.settle = function(heroId, onDone, clearMs) {
+    c._clearMs = clearMs || 4500;
+    const idx = c.cardEls.findIndex(el => el.dataset.heroId === heroId);
+    if (idx === -1) { c.startRoulette(); if (onDone) setTimeout(onDone, c._clearMs); return; }
+    c.pickedIdx = idx;
+    c.onPickDone = onDone || null;
+    c.isAnimating = true;
+    c.state = 'settling';
+    cancelAnimationFrame(c.raf);
+    c.raf = requestAnimationFrame(tick);
+  };
+
+  c.reset = function() {
+    clearTimeout(c.clearTimer);
+    c.startRoulette();
+  };
+
+  c.applyPositions = applyPositions;
+  return c;
+}
+
+// ════════════════════════════════════════════
+//  APP STATE
+// ════════════════════════════════════════════
+let blueC = null;
+let redC  = null;
+let activePanel    = null;
+let panelVisible   = false;
+let prevData       = null;
+let activeData     = null;
+let displayedSlot  = null;
+let pollTimer      = null;
+// Track whether each panel has slid in since the last H-key hide.
+// Panels slide on first appearance; subsequent slot transitions are instant.
+let blueEverShown  = false;
+let redEverShown   = false;
+let userHidden     = false;
+let displayedDraftRef = null; // draft state as of last completed animation (not last poll)
+let pickQueue = [];           // pending pick animations processed in sequence
+let prevDraftKey  = null;     // fingerprint of last seen draft — detects new game
+
+const statusEl = document.getElementById('debug-status');
+const jsonEl   = document.getElementById('debug-json');
+
+function getActiveCarousel() {
+  return activePanel === 'blue' ? blueC : activePanel === 'red' ? redC : null;
+}
+
+// ════════════════════════════════════════════
+//  PANEL VISIBILITY
+// ════════════════════════════════════════════
+function _setPanelInstant(el) {
+  // Apply .no-anim, flush layout, remove — so the visible toggle has no transition.
+  el.classList.add('no-anim');
+  el.offsetHeight; // force reflow
+  el.classList.remove('no-anim');
+}
+
+function showPanel(side, animated) {
+  // animated=true   → always slide
+  // animated=false  → always instant
+  // animated=undefined → slide only on first appearance since last hideAll()
+  const shownBefore = side === 'blue' ? blueEverShown : redEverShown;
+  const useAnim = animated === true || (animated === undefined && !shownBefore);
+
+  const blueEl = document.getElementById('blue-panel');
+  const redEl  = document.getElementById('red-panel');
+  const otherEl = side === 'blue' ? redEl : blueEl;
+
+  // Stop idle carousel on the outgoing side
+  const hiddenC = side === 'blue' ? redC : blueC;
+  if (hiddenC && hiddenC.state === 'roulette') {
+    cancelAnimationFrame(hiddenC.raf); hiddenC.state = 'stopped';
+  }
+
+  if (!useAnim) {
+    _setPanelInstant(blueEl);
+    _setPanelInstant(redEl);
+  }
+
+  blueEl.classList.toggle('visible', side === 'blue');
+  redEl.classList.toggle('visible', side === 'red');
+
+  if (side === 'blue') blueEverShown = true;
+  else                 redEverShown  = true;
+
+  activePanel  = side;
+  panelVisible = true;
+}
+
+function hideAll() {
+  document.getElementById('blue-panel').classList.remove('visible');
+  document.getElementById('red-panel').classList.remove('visible');
+  panelVisible  = false;
+  blueEverShown = false;
+  redEverShown  = false;
+  userHidden    = true;
+}
+
+function toggleOverlay() {
+  if (panelVisible) {
+    hideAll();
+  } else if (activePanel) {
+    userHidden = false;
+    showPanel(activePanel, true);
+    getActiveCarousel()?.startRoulette();
+  }
+}
+
+// ════════════════════════════════════════════
+//  HEADER
+// ════════════════════════════════════════════
+function setHeaderText(side, teamName, type) {
+  const isBan    = type === 'BAN';
+  const cls      = isBan ? 'ht-ban' : 'ht-pick';
+  const tricode  = (teamName || side).toUpperCase();
+  const typeSpan = `<span class="${cls}">${type}</span>`;
+  if (side === 'blue') {
+    document.getElementById('blue-header-text').innerHTML =
+      `DRAFT PREDICT &mdash; ${tricode} ${typeSpan}`;
+  } else {
+    document.getElementById('red-header-text').innerHTML =
+      `${typeSpan} ${tricode} &mdash; DRAFT PREDICT`;
+  }
+}
+
+// ════════════════════════════════════════════
+//  RENDER PREDICTION
+// ════════════════════════════════════════════
+function renderPrediction(pred, data) {
+  displayedSlot = pred.slot;
+  const side     = pred.side.toLowerCase();
+  const team     = side === 'blue' ? data.blueTeam?.name : data.redTeam?.name;
+  const carousel = side === 'blue' ? blueC : redC;
+
+  setHeaderText(side, team, pred.type);
+
+  const candidates = pred.candidates.slice(0, 10);
+  carousel.init(candidates);
+  carousel.startRoulette();
+  buildAnimTestGrid(candidates);
+
+  activePanel = side;
+  if (!userHidden) showPanel(side);
+
+  document.querySelectorAll('.slot-chip').forEach(el =>
+    el.classList.toggle('active', +el.dataset.slot === pred.slot));
+}
+
+// ════════════════════════════════════════════
+//  PICK DETECTION
+// ════════════════════════════════════════════
+function detectReveal(newData) {
+  if (!displayedDraftRef || !displayedSlot) return false;
+
+  const ns = newData.draftState;
+  const animatedAll = new Set([
+    ...(displayedDraftRef.bluePicks||[]), ...(displayedDraftRef.redPicks||[]),
+    ...(displayedDraftRef.blueBans||[]),  ...(displayedDraftRef.redBans||[])
+  ]);
+
+  // Collect ALL newly added picks/bans (not just first).
+  // Capture the matching prediction from prevData (still pre-pick snapshot at this point)
+  // so _processPickQueue can reinit the carousel even after activeData has moved on.
+  const added = [];
+  const collect = (arr, side, type) =>
+    (arr||[]).forEach(id => {
+      if (!animatedAll.has(id)) {
+        const pred = prevData?.predictions?.find(p =>
+          p.side.toLowerCase() === side &&
+          p.type.toLowerCase() === type &&
+          p.candidates?.some(c => c.heroId === id)
+        ) || null;
+        added.push({ heroId: id, side, type, pred });
+      }
+    });
+  collect(ns.bluePicks, 'blue', 'pick');
+  collect(ns.redPicks,  'red',  'pick');
+  collect(ns.blueBans,  'blue', 'ban');
+  collect(ns.redBans,   'red',  'ban');
+  if (!added.length) return false;
+
+  // Advance ref for ALL of them immediately — prevents re-detection on next poll
+  displayedDraftRef = {
+    bluePicks: [...(displayedDraftRef.bluePicks||[]), ...added.filter(p=>p.side==='blue'&&p.type==='pick').map(p=>p.heroId)],
+    redPicks:  [...(displayedDraftRef.redPicks||[]),  ...added.filter(p=>p.side==='red' &&p.type==='pick').map(p=>p.heroId)],
+    blueBans:  [...(displayedDraftRef.blueBans||[]),  ...added.filter(p=>p.side==='blue'&&p.type==='ban').map(p=>p.heroId)],
+    redBans:   [...(displayedDraftRef.redBans||[]),   ...added.filter(p=>p.side==='red' &&p.type==='ban').map(p=>p.heroId)],
+  };
+
+  // When hidden, silently acknowledge picks — no animation, no catch-up on show
+  if (userHidden) return true;
+
+  // Sort by slot so picks are processed in draft order (lower slot = picked earlier)
+  added.sort((a, b) => (a.pred?.slot ?? 999) - (b.pred?.slot ?? 999));
+
+  const wasIdle = pickQueue.length === 0 && !blueC?.isAnimating && !redC?.isAnimating;
+  added.forEach(p => pickQueue.push(p));
+  if (wasIdle) _processPickQueue(newData);
+  return true;
+}
+
+function _processPickQueue(fallbackData) {
+  if (!pickQueue.length) return;
+  const entry = pickQueue[0];
+  const next  = pickQueue[1];
+
+  // Shorten display time only for same-side same-type runs (pick+pick or ban+ban)
+  const consecutive = next && next.side === entry.side && next.type === entry.type;
+  const clearMs = consecutive ? 2000 : 4500;
+
+  const targetC = entry.side === 'blue' ? blueC : redC;
+  if (!targetC) { pickQueue.shift(); _processPickQueue(fallbackData); return; }
+
+  if (!userHidden) showPanel(entry.side);
+
+  const onDone = () => {
+    pickQueue.shift();
+    const data = activeData || fallbackData;
+    if (pickQueue.length) {
+      _processPickQueue(data);
+    } else {
+      // Prefer the prediction for the current active slot; fall back to last in array
+      const latest = data.predictions?.find(p => p.slot === data.currentSlot)
+                  || (data.predictions?.length ? data.predictions[data.predictions.length - 1] : null);
+      if (latest) {
+        renderPrediction(latest, data);
+      } else {
+        // No more predictions — draft is complete, hide the overlay
+        hideAll();
+      }
+    }
+  };
+
+  // Find picked hero in current carousel
+  let idx = targetC.cardEls.findIndex(el => el.dataset.heroId === entry.heroId);
+
+  if (idx === -1) {
+    const data = activeData || fallbackData;
+    const sidePred = entry.pred
+      || data.predictions?.find(p =>
+           p.side.toLowerCase() === entry.side &&
+           p.type.toLowerCase() === entry.type &&
+           p.candidates?.some(c => c.heroId === entry.heroId)
+         );
+    if (sidePred) {
+      setHeaderText(entry.side,
+        entry.side === 'blue' ? data.blueTeam?.name : data.redTeam?.name,
+        sidePred.type);
+      // Build candidate list — force the picked hero in even if ranked outside top 10
+      const cands = sidePred.candidates.slice(0, 10);
+      if (!cands.some(c => c.heroId === entry.heroId)) {
+        const actual = sidePred.candidates.find(c => c.heroId === entry.heroId);
+        if (actual) cands.splice(cands.length - 1, 1, actual);
+      }
+      targetC.init(cands);
+      buildAnimTestGrid(cands);
+      activePanel   = entry.side;
+      displayedSlot = sidePred.slot;
+      idx = targetC.cardEls.findIndex(el => el.dataset.heroId === entry.heroId);
+    }
+  }
+
+  // Hero still not in carousel (no prediction data at all) — advance queue immediately
+  if (idx === -1) {
+    onDone();
+    return;
+  }
+
+  // Ramp up roulette first if carousel wasn't already spinning
+  const wasRouletting = targetC.state === 'roulette';
+  if (!wasRouletting) targetC.startRoulette();
+  setTimeout(() => {
+    targetC.settle(entry.heroId, onDone, clearMs);
+  }, wasRouletting ? 0 : 400);
+}
+
+// ════════════════════════════════════════════
+//  DEBUG: ANIM TEST GRID
+// ════════════════════════════════════════════
+function buildAnimTestGrid(candidates) {
+  const grid = document.getElementById('anim-test-grid');
+  document.getElementById('anim-test-sec').style.display = 'block';
+  grid.innerHTML = candidates.map((c, i) => `
+    <div class="anim-chip" onclick="testPickAnim('${c.heroId}')">
+      <div class="anim-chip-rank">#${i+1}</div>
+      <div class="anim-chip-name">${c.heroName}</div>
+    </div>`).join('');
+}
+
+function testPickAnim(heroId) {
+  const c = getActiveCarousel();
+  if (!c) return;
+  if (c.state === 'settling' || c.state === 'picked') c.reset();
+  setTimeout(() => c.settle(heroId, null), 50);
+}
+
+function resetActiveCarousel() {
+  getActiveCarousel()?.reset();
+}
+
+// ════════════════════════════════════════════
+//  DATA LOAD
+// ════════════════════════════════════════════
+function applyData(data) {
+  activeData = data;
+  prevData   = null;
+  pickQueue  = [];
+  displayedDraftRef = JSON.parse(JSON.stringify(data.draftState || {}));
+  jsonEl.textContent = JSON.stringify(data, null, 2);
+  statusEl.innerHTML = `
+    <span class="ok">● Loaded</span> &nbsp; ${new Date().toLocaleTimeString()}<br>
+    Room: <strong style="color:#fff">${data.roomName||'—'}</strong>
+    &nbsp; Status: <strong style="color:#fff">${data.status||'—'}</strong><br>
+    Slot: <strong style="color:#f0c040">${data.currentSlot}</strong>
+    &nbsp; Blue: <strong style="color:#4da6ff">${data.blueTeam?.name||'—'}</strong>
+    &nbsp; Red: <strong style="color:#ff5555">${data.redTeam?.name||'—'}</strong><br>
+    Predictions: ${data.predictions?.length||0}`;
+  buildSlotGrid(data);
+  const latest = data.predictions?.[data.predictions.length - 1];
+  if (latest) renderPrediction(latest, data);
+}
+
+// ════════════════════════════════════════════
+//  SLOT NAVIGATOR
+// ════════════════════════════════════════════
+function buildSlotGrid(data) {
+  const grid   = document.getElementById('slot-grid');
+  const navSec = document.getElementById('slot-nav-sec');
+  const preds  = data.predictions;
+  if (!preds?.length) { navSec.style.display = 'none'; return; }
+  navSec.style.display = 'block';
+
+  const bans  = preds.filter(p => p.type === 'BAN');
+  const picks = preds.filter(p => p.type === 'PICK');
+  let html = '';
+  if (bans.length) {
+    html += `<div class="slot-phase-label">— Ban Phase —</div>`;
+    const bb = bans.filter(p => p.side === 'BLUE'), rb = bans.filter(p => p.side === 'RED');
+    for (let r = 0; r < Math.max(bb.length, rb.length); r++) {
+      html += bb[r] ? chipHTML(bb[r], data, 'blue') : '<div></div>';
+      html += rb[r] ? chipHTML(rb[r], data, 'red')  : '<div></div>';
+    }
+  }
+  if (picks.length) {
+    html += `<div class="slot-phase-label">— Pick Phase —</div>`;
+    const bp = picks.filter(p => p.side === 'BLUE'), rp = picks.filter(p => p.side === 'RED');
+    for (let r = 0; r < Math.max(bp.length, rp.length); r++) {
+      html += bp[r] ? chipHTML(bp[r], data, 'blue') : '<div></div>';
+      html += rp[r] ? chipHTML(rp[r], data, 'red')  : '<div></div>';
+    }
+  }
+
+  grid.innerHTML = html;
+  grid.querySelectorAll('.slot-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      const pred = data.predictions.find(p => p.slot === +chip.dataset.slot);
+      if (!pred) return;
+      const c = getActiveCarousel();
+      if (c) { clearTimeout(c.clearTimer); cancelAnimationFrame(c.raf); c.isAnimating = false; }
+      renderPrediction(pred, data);
+    });
+  });
+  grid.querySelectorAll('.slot-chip').forEach(el =>
+    el.classList.toggle('active', +el.dataset.slot === displayedSlot));
+}
+
+function chipHTML(pred, data, sc) {
+  const team = sc === 'blue' ? data.blueTeam?.name : data.redTeam?.name;
+  return `<div class="slot-chip ${sc}" data-slot="${pred.slot}">
+    <div class="slot-chip-num">${pred.slot}</div>
+    <div class="slot-chip-info">
+      <div class="slot-chip-type">${pred.type}</div>
+      <div class="slot-chip-team">${team||pred.side}</div>
+    </div></div>`;
+}
+
+// ════════════════════════════════════════════
+//  LIVE FETCH
+// ════════════════════════════════════════════
+function draftKey(data) {
+  const r = data.roomName || '';
+  const b = data.blueTeam?.name || '';
+  const d = data.redTeam?.name  || '';
+  if (!r && !b && !d) return null; // empty / between-game state
+  return `${r}|${b}|${d}`;
+}
+
+async function fetchLive() {
+  const raw = document.getElementById('api-url').value.trim();
+  localStorage.setItem('draftpredict_url', raw);
+  try {
+    const res  = await fetch(raw, { cache: 'no-store' });
+    if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
+    const data = await res.json();
+
+    const key       = draftKey(data);
+    const isNewDraft = prevData && prevDraftKey && key && key !== prevDraftKey;
+
+    if (!prevData || isNewDraft) {
+      if (isNewDraft) {
+        // New game detected — reset animation state cleanly before reinit
+        clearTimeout(blueC?.clearTimer); cancelAnimationFrame(blueC?.raf);
+        clearTimeout(redC?.clearTimer);  cancelAnimationFrame(redC?.raf);
+        if (blueC) blueC.isAnimating = false;
+        if (redC)  redC.isAnimating  = false;
+        pickQueue     = [];
+        blueEverShown = false;
+        redEverShown  = false;
+        userHidden    = false; // auto-show for new draft
+      }
+      applyData(data);
+    } else {
+      // Always call detectReveal — queue handles sequencing even while animating
+      const didReveal = detectReveal(data);
+      activeData = data;
+      jsonEl.textContent = JSON.stringify(data, null, 2);
+      if (!didReveal && !blueC?.isAnimating && !redC?.isAnimating) {
+        buildSlotGrid(data);
+        // Draft complete — no predictions left and panel is still up
+        if (panelVisible && !data.predictions?.length) hideAll();
+      }
+    }
+
+    prevDraftKey = key ?? prevDraftKey; // don't overwrite with null between games
+
+    prevData = data;
+    statusEl.innerHTML = `
+      <span class="ok">● Live</span> &nbsp; ${new Date().toLocaleTimeString()}<br>
+      Room: <strong style="color:#fff">${data.roomName||'—'}</strong>
+      &nbsp; Status: <strong style="color:#fff">${data.status||'—'}</strong><br>
+      Slot: <strong style="color:#f0c040">${data.currentSlot}</strong>
+      &nbsp; Blue: <strong style="color:#4da6ff">${data.blueTeam?.name||'—'}</strong>
+      &nbsp; Red: <strong style="color:#ff5555">${data.redTeam?.name||'—'}</strong><br>
+      Predictions: ${data.predictions?.length||0}`;
+  } catch(err) {
+    const isCors = err.message === 'Failed to fetch' || err.message === 'Load failed';
+    statusEl.innerHTML = `<span class="err">● ${err.message}</span>` +
+      (isCors ? `<br><span style="color:rgba(255,255,255,.25);font-size:9px">
+        Make sure the overlay server is running (node server.js).</span>` : '');
+  }
+}
+
+function restartPoller() {
+  clearInterval(pollTimer);
+  const ms = parseInt(document.getElementById('poll-ms').value) || 3000;
+  fetchLive();
+  pollTimer = setInterval(fetchLive, ms);
+}
+function stopPoller() {
+  clearInterval(pollTimer); pollTimer = null;
+  statusEl.innerHTML += ' &nbsp;<span style="color:rgba(255,255,255,.3)">— stopped</span>';
+}
+
+// ════════════════════════════════════════════
+//  REMOTE CONTROL — SSE-based (event: draftpredict)
+// ════════════════════════════════════════════
+function getServerHost() {
+  return (document.getElementById('server-host')?.value || 'localhost:3000').trim();
+}
+
+function applyCmd(cmd) {
+  if (cmd === 'show') {
+    document.getElementById('debug').classList.remove('visible');
+    setTimeout(() => {
+      // Clear any stale queue from while we were hidden — show current state, not catch-up
+      if (blueC) { clearTimeout(blueC.clearTimer); cancelAnimationFrame(blueC.raf); blueC.isAnimating = false; }
+      if (redC)  { clearTimeout(redC.clearTimer);  cancelAnimationFrame(redC.raf);  redC.isAnimating  = false; }
+      pickQueue  = [];
+      userHidden = false;
+      const latest = activeData?.predictions?.find(p => p.slot === activeData?.currentSlot)
+                  || activeData?.predictions?.slice(-1)[0];
+      if (latest) renderPrediction(latest, activeData);
+      else if (activePanel) { showPanel(activePanel, true); getActiveCarousel()?.startRoulette(); }
+    }, 500);
+  } else if (cmd === 'hide') {
+    // Cancel any running animations cleanly
+    if (blueC) { clearTimeout(blueC.clearTimer); cancelAnimationFrame(blueC.raf); blueC.isAnimating = false; }
+    if (redC)  { clearTimeout(redC.clearTimer);  cancelAnimationFrame(redC.raf);  redC.isAnimating  = false; }
+    pickQueue = [];
+    hideAll(); // sets userHidden = true, removes visible classes
+    // Poller keeps running — detectReveal silently advances displayedDraftRef while hidden
+  }
+}
+
+let _sseSource = null;
+function startControlPoll() {
+  // ── SSE: instant delivery (same mechanism as all other overlays) ──────────
+  function connectSSE() {
+    if (_sseSource) { _sseSource.close(); _sseSource = null; }
+    const es = new EventSource(`http://${getServerHost()}/overlay/events`);
+    es.addEventListener('draftpredict', e => {
+      try { applyCmd(JSON.parse(e.data).cmd); } catch {}
+    });
+    es.onerror = () => {}; // auto-reconnects
+    _sseSource = es;
+  }
+  connectSSE();
+  document.getElementById('server-host').addEventListener('change', connectSSE);
+
+  // ── Poll fallback: catches commands if SSE is still connecting or dropped ─
+  async function _pollTick() {
+    const ac = new AbortController();
+    const t = setTimeout(() => ac.abort(), 400);
+    try {
+      const res = await fetch(`http://${getServerHost()}/overlay/draftpredict/poll`, {
+        cache: 'no-store', signal: ac.signal
+      });
+      clearTimeout(t);
+      if (res.ok) {
+        const { commands } = await res.json();
+        commands.forEach(applyCmd);
+      }
+    } catch {}
+    setTimeout(_pollTick, 300);
+  }
+  _pollTick();
+}
+
+// ════════════════════════════════════════════
+//  KEY BINDINGS
+// ════════════════════════════════════════════
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+  if (e.key === '`') { e.preventDefault(); document.getElementById('debug').classList.toggle('visible'); }
+  if (e.key === 'h' || e.key === 'H') toggleOverlay();
+});
+
+// ════════════════════════════════════════════
+//  INIT
+// ════════════════════════════════════════════
+(function init() {
+  blueC = createCarousel(document.getElementById('blue-viewport'), -1);
+  redC  = createCarousel(document.getElementById('red-viewport'),  +1);
+  const savedServer = localStorage.getItem('draftpredict_server');
+  document.getElementById('server-host').value = savedServer || 'localhost:3000';
+  const saved = localStorage.getItem('draftpredict_url');
+  if (saved) document.getElementById('api-url').value = saved;
+  userHidden = true;
+  startControlPoll();
+  restartPoller();
+})();
+</script>
+</body>
+</html>

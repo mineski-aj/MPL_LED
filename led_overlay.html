@@ -1,0 +1,1712 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>MPL LED Overlay</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body {
+    width: 2532px;
+    height: 1024px;
+    overflow: hidden;
+    background: transparent;
+  }
+
+  .canvas {
+    position: relative;
+    width: 2532px;
+    height: 1024px;
+  }
+
+  .gold-border {
+    position: absolute;
+    width: 1024px;
+    height: 1024px;
+    background-image: url('goldborder.png');
+    background-size: 100% 100%;
+    background-repeat: no-repeat;
+    top: 0;
+    z-index: 0;
+  }
+
+  #gold-left  { left: 0; }
+  #gold-right { right: 0; }
+
+  .plate {
+    position: absolute;
+    width: 1000px;
+    height: 200px;
+    background-size: 100% 100%;
+    background-repeat: no-repeat;
+    z-index: 1;
+  }
+
+  /* Left plates — P1 to P5, stacked from top-left */
+  #plate-1  { left: 12px; top: 12px;   background-image: url('plateleft.png'); }
+  #plate-2  { left: 12px; top: 212px;  background-image: url('plateleft.png'); }
+  #plate-3  { left: 12px; top: 412px;  background-image: url('plateleft.png'); }
+  #plate-4  { left: 12px; top: 612px;  background-image: url('plateleft.png'); }
+  #plate-5  { left: 12px; top: 812px;  background-image: url('plateleft.png'); }
+
+  /* ── Item slots ── */
+  .item-slot {
+    position: absolute;
+    width: 69px;
+    height: 69px;
+    top: 118px;
+    overflow: visible;
+  }
+  .item-slot img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    border-radius: 4px;
+  }
+  [id$="-item-1"] { left: 271px; }
+  [id$="-item-2"] { left: 346px; }
+  [id$="-item-3"] { left: 421px; }
+  [id$="-item-4"] { left: 496px; }
+  [id$="-item-5"] { left: 571px; }
+  [id$="-item-6"] { left: 646px; }
+
+  @keyframes item-pop {
+    0%   { transform: scale(0.45); opacity: 0;   box-shadow: 0 0 0 0px  rgba(255,200,30,0);    }
+    50%  { transform: scale(1.15); opacity: 1;   box-shadow: 0 0 10px 4px rgba(255,200,30,0.75); }
+    75%  { transform: scale(0.96);               box-shadow: 0 0 5px 1px  rgba(255,200,30,0.25); }
+    100% { transform: scale(1);   opacity: 1;   box-shadow: 0 0 0 0px  rgba(255,200,30,0);    }
+  }
+  .item-pop { animation: item-pop 0.42s cubic-bezier(0.34,1.56,0.64,1) forwards; }
+
+  @keyframes item-combine {
+    0%   { transform: scale(0.88); filter: brightness(5) saturate(0); }
+    30%  { transform: scale(1.1);  filter: brightness(1.6) saturate(1.8); box-shadow: 0 0 12px 5px rgba(180,100,255,0.75); }
+    65%  { transform: scale(0.97); filter: brightness(1);               box-shadow: 0 0 5px 2px  rgba(180,100,255,0.2);  }
+    100% { transform: scale(1);   filter: brightness(1);               box-shadow: none; }
+  }
+  .item-combine { animation: item-combine 0.48s ease-out forwards; }
+
+  /* ── Debug panel ── */
+  #debug-panel {
+    display: none;
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(12,12,12,0.96);
+    border: 1px solid rgba(80,80,80,0.5);
+    border-radius: 6px;
+    padding: 14px 16px;
+    z-index: 9999;
+    color: #fff;
+    font-family: 'Segoe UI', sans-serif;
+    font-size: 11px;
+    min-width: 280px;
+  }
+  #debug-panel.visible { display: block; }
+  .dbg-title {
+    font-size: 9px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.35);
+    margin-bottom: 10px;
+  }
+  .dbg-row { display: flex; gap: 6px; margin-bottom: 6px; }
+  .dbg-btn {
+    flex: 1;
+    cursor: pointer;
+    padding: 6px 8px;
+    border-radius: 4px;
+    background: #2a2a2a;
+    color: #ccc;
+    border: 1px solid #444;
+    font-size: 10px;
+    font-weight: bold;
+    text-align: center;
+  }
+  .dbg-btn:active { opacity: 0.7; }
+  .dbg-btn.green  { background: #0a1a0a; color: #00e375; border-color: #008452; }
+  .dbg-btn.purple { background: #12001a; color: #c87aff; border-color: #7a00cc; }
+  .dbg-btn.red    { background: #1a0004; color: #ff6666; border-color: #aa0010; }
+  .dbg-btn.orange { background: #1a0e00; color: #ffaa33; border-color: #aa6600; }
+  .dbg-hint { font-size: 9px; color: rgba(255,255,255,0.25); margin-top: 8px; text-align: center; }
+  #dbg-url-input {
+    flex: 1;
+    padding: 5px 6px;
+    background: #1a1a1a;
+    border: 1px solid #444;
+    border-radius: 4px;
+    color: #ccc;
+    font-size: 9px;
+    font-family: monospace;
+    min-width: 0;
+  }
+
+  /* ── Plate 1 elements ── */
+  ._20900 {
+    font-size: 25px;
+    font-family: "Anton";
+    color: rgb(0, 0, 0);
+    text-transform: uppercase;
+    line-height: 1.2;
+    text-align: center;
+    white-space: nowrap;
+    width: 100px;
+    -moz-transform:    matrix(2.36183299892145,4.47777920346021e-15,1.48222216644607e-15,2.36220025642401,0,0);
+    -webkit-transform: matrix(2.36183299892145,4.47777920346021e-15,1.48222216644607e-15,2.36220025642401,0,0);
+    -ms-transform:     matrix(2.36183299892145,4.47777920346021e-15,1.48222216644607e-15,2.36220025642401,0,0);
+    position: absolute;
+    left: 601.386px;
+    top: 53.5px;
+    z-index: 38;
+  }
+
+  /* shared mixin for KDA label/value alignment:
+     same left + same width = same visual center regardless of scale */
+  .KILL, ._kill-val   { left: 245.727px; }
+  .DEATH, ._death-val { left: 327.327px; }
+  .ASSIST, ._31       { left: 406.715px; }
+
+  .KILL, .DEATH, .ASSIST {
+    font-size: 25px;
+    font-family: "General Sans";
+    color: rgb(0, 0, 0);
+    font-weight: bold;
+    text-transform: uppercase;
+    line-height: 1.2;
+    text-align: center;
+    white-space: nowrap;
+    width: 100px;
+    transform-origin: center center;
+    -webkit-transform: matrix(0.73394743086303,0,0,0.73406155734894,0,0);
+    transform:         matrix(0.73394743086303,0,0,0.73406155734894,0,0);
+    position: absolute;
+    z-index: 29;
+  }
+  .KILL  { top: 7px;   z-index: 29; }
+  .DEATH { top: 7px;   z-index: 32; }
+  .ASSIST{ top: 7.5px; z-index: 34; }
+
+  ._kill-val, ._death-val, ._31 {
+    font-size: 25px;
+    font-family: "Anton";
+    color: rgb(0, 0, 0);
+    text-transform: uppercase;
+    line-height: 1.2;
+    text-align: center;
+    width: 100px;
+    transform-origin: center center;
+    -webkit-transform: matrix(2.06324753826674,0,0,2.06356836668196,0,0);
+    transform:         matrix(2.06324753826674,0,0,2.06356836668196,0,0);
+    position: absolute;
+    top: 54px;
+  }
+  ._kill-val  { z-index: 26; }
+  ._death-val { z-index: 31; }
+  ._31        { z-index: 33; }
+
+  /* ── Damage Taken stat ── */
+  .damage-taken-label {
+    font-size: 19.58px;
+    font-family: "General Sans";
+    color: rgb(0, 0, 0);
+    font-weight: bold;
+    text-transform: uppercase;
+    line-height: 14px;
+    text-align: center;
+    white-space: nowrap;
+    width: 214px;
+    height: 14px;
+    position: absolute;
+    left: 11px;
+    top: 14px;
+    z-index: 25;
+  }
+
+  .damage-taken-val {
+    font-size: 25px;
+    font-family: "Anton";
+    color: rgb(0, 0, 0);
+    text-transform: uppercase;
+    line-height: 1.2;
+    text-align: center;
+    width: 100px;
+    -moz-transform:    matrix(2.06324753826674,3.91169355439619e-15,1.29483805056529e-15,2.06356836668196,0,0);
+    -webkit-transform: matrix(2.06324753826674,3.91169355439619e-15,1.29483805056529e-15,2.06356836668196,0,0);
+    -ms-transform:     matrix(2.06324753826674,3.91169355439619e-15,1.29483805056529e-15,2.06356836668196,0,0);
+    transform:         matrix(2.06324753826674,3.91169355439619e-15,1.29483805056529e-15,2.06356836668196,0,0);
+    position: absolute;
+    left: 68px;
+    top: 54px;
+    z-index: 24;
+  }
+
+  .SUPERMARCO {
+    font-size: 16px;
+    font-family: "General Sans";
+    color: rgb(22, 22, 22);
+    font-weight: bold;
+    text-transform: uppercase;
+    line-height: 0.984;
+    text-align: center;
+    width: 190px;
+    -moz-transform:    matrix(1.54312829321249,-2.31489020101742e-16,0,1.53969372351891,0,0);
+    -webkit-transform: matrix(1.54312829321249,-2.31489020101742e-16,0,1.53969372351891,0,0);
+    -ms-transform:     matrix(1.54312829321249,-2.31489020101742e-16,0,1.53969372351891,0,0);
+    transform-origin: center center;
+    position: absolute;
+    left: 801.676px;
+    top: 174.057px;
+    z-index: 53;
+  }
+
+  /* squeeze container — only active when JS detects name exceeds 190px */
+  .name-inner {
+    display: inline-block;
+    white-space: nowrap;
+    transform-origin: left center;
+  }
+
+  .heart-bpm {
+    position: absolute;
+    left: 114px;
+    top: 152px;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    color: rgb(255, 1, 1);
+    z-index: 22;
+  }
+
+  .ekg-zone-led {
+    position: absolute;
+    left: 43px;
+    top: 152px;
+    width: 62px;
+    height: 28px;
+    z-index: 22;
+    mask-image: linear-gradient(to right, transparent, black 6%, black 94%, transparent);
+    -webkit-mask-image: linear-gradient(to right, transparent, black 6%, black 94%, transparent);
+  }
+  .path-line {
+    vector-effect: non-scaling-stroke;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    fill: none;
+    will-change: d;
+  }
+
+  /* BPM value */
+  ._999 {
+    font-size: 16px;
+    font-family: "Anton";
+    color: rgb(255, 1, 1);
+    text-transform: uppercase;
+    line-height: 0.984;
+    text-align: center;
+    -moz-transform:    matrix(2.93033008800352,0,0,2.93033008800352,0,0);
+    -webkit-transform: matrix(2.93033008800352,0,0,2.93033008800352,0,0);
+    -ms-transform:     matrix(2.93033008800352,0,0,2.93033008800352,0,0);
+    position: absolute;
+    left: 176.455px;
+    top: 160.557px;
+    z-index: 23;
+  }
+
+  /* ── Role icon ── */
+  .role-icon {
+    position: absolute;
+    left: 754px;
+    top: 170px;
+    width: 25px;
+    height: 25px;
+    z-index: 40;
+  }
+  .role-icon img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+    filter: invert(1);
+  }
+
+  /* ── Level circle ── */
+  .level-circle {
+    position: absolute;
+    left: 935px;
+    top: 9px;
+    width: 58px;
+    height: 58px;
+    z-index: 15;
+  }
+  .level-arc {
+    transition: stroke-dashoffset 0.5s ease-out;
+  }
+
+  /* ── Hero icon ── */
+  .hero-icon {
+    position: absolute;
+    left: 745px;
+    top: 0;
+    width: 255px;
+    height: 147px;
+    background: rgba(60,60,60,0.35);
+    overflow: hidden;
+    z-index: 10;
+  }
+  .hero-icon img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+  .hero-icon.dead img {
+    filter: grayscale(100%) brightness(0.5);
+  }
+
+  @keyframes hero-death {
+    0%   { filter: brightness(1);                                }
+    6%   { filter: brightness(8) saturate(0);                   }
+    18%  { filter: brightness(3) saturate(0) grayscale(100%);   }
+    55%  { filter: brightness(0.8) grayscale(100%);             }
+    100% { filter: grayscale(100%) brightness(0.5);             }
+  }
+  @keyframes hero-revive {
+    0%   { filter: grayscale(100%) brightness(0.5);             }
+    12%  { filter: brightness(7) saturate(3);                   }
+    40%  { filter: brightness(1.6) saturate(1.4);               }
+    75%  { filter: brightness(1.05) saturate(1.05);             }
+    100% { filter: brightness(1) saturate(1);                   }
+  }
+  .hero-icon.dying img    { animation: hero-death  0.65s ease-out forwards; }
+  .hero-icon.reviving img { animation: hero-revive 0.9s  ease-out forwards; }
+
+  .death-timer {
+    display: none;
+    position: absolute;
+    inset: 0;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Anton', sans-serif;
+    font-size: 72px;
+    color: rgb(220, 30, 30);
+    text-shadow: 0 2px 12px rgba(0,0,0,1), 0 0 24px rgba(220,30,30,0.6);
+    z-index: 5;
+    pointer-events: none;
+  }
+  .death-timer.active { display: flex; }
+
+  /* ── Spell icon ── */
+  .spell-icon {
+    position: absolute;
+    left: 753px;
+    top: 92px;
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: rgba(60,60,60,0.5);
+    overflow: hidden;
+    z-index: 11;
+    filter: drop-shadow(0 2px 6px rgba(0,0,0,0.75));
+  }
+  .spell-icon img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  /* ── HP bar ── */
+  .hp-bar-wrap {
+    position: absolute;
+    left: 745px;
+    top: 147px;
+    width: 255px;
+    height: 15px;
+    background: #0a0a0a;
+    border-radius: 2px;
+    overflow: hidden;
+    z-index: 12;
+  }
+  .hp-bar-wrap::after {
+    content: '';
+    position: absolute; inset: 0;
+    border-radius: 2px;
+    box-shadow: inset 0 0 6px rgba(0,0,0,0.75),
+                inset 0  1px 4px rgba(0,0,0,0.5),
+                inset 0 -1px 4px rgba(0,0,0,0.5);
+    pointer-events: none;
+    z-index: 10;
+  }
+  .hp-ghost {
+    position: absolute; top: 0; bottom: 0; left: 0;
+    background: linear-gradient(to right, #7a0900, #d2001e);
+    will-change: width;
+  }
+  .hp-fill {
+    position: absolute; top: 0; bottom: 0; left: 0;
+    background: linear-gradient(to right, #008452, #00e375);
+    will-change: width;
+  }
+
+  /* ── Camp 2 mirror overrides ── */
+  .camp2 .hero-icon   { left: 0px; }
+  .camp2 .spell-icon  { left: 199px; }
+  .camp2 .level-circle { left: 7px; }
+  .camp2 .role-icon   { left: 221px; }
+  .camp2 .hp-bar-wrap { left: 0px; }
+  .camp2 .hp-bar-wrap .hp-ghost {
+    left: auto; right: 0;
+    background: linear-gradient(to left, #7a0900, #d2001e);
+  }
+  .camp2 .hp-bar-wrap .hp-fill {
+    left: auto; right: 0;
+    background: linear-gradient(to left, #008452, #00e375);
+  }
+
+  /* ── Camp 2 stats/EKG mirror ── */
+  .camp2 .damage-taken-label { left: auto; right: 11px; }
+  .camp2 .damage-taken-val   { left: auto; right: 68px; }
+  .camp2 .KILL,
+  .camp2 ._kill-val           { left: auto; right: 406.715px; }
+  .camp2 .DEATH,
+  .camp2 ._death-val          { left: auto; right: 319.327px; }
+  .camp2 .ASSIST,
+  .camp2 ._31                 { left: auto; right: 245.727px; }
+  .camp2 ._20900              { left: auto; right: 601.386px; }
+  .camp2 .ekg-zone-led {
+    left: auto; right: 43px;
+    mask-image: linear-gradient(to left, transparent, black 6%, black 94%, transparent);
+    -webkit-mask-image: linear-gradient(to left, transparent, black 6%, black 94%, transparent);
+  }
+  .camp2 .heart-bpm  { left: auto; right: 114px; }
+  .camp2 ._999       { left: auto; right: 176.455px; }
+  .camp2 .SUPERMARCO { left: auto; right: 801.676px; }
+
+  /* ── Mid panels ── */
+  .mid-panel {
+    position: absolute;
+    width: 242px;
+    height: 1024px;
+    top: 0;
+    background-image: url('sidebacker.png');
+    background-size: 100% 100%;
+    background-repeat: no-repeat;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    overflow: hidden;
+  }
+  #mid-left  { left: 1024px; }
+  #mid-right { right: 1024px; }
+
+  /* ── Mid panel content ── */
+  .mp-logo-wrap {
+    flex: 0 0 207px;
+    margin-top: 36px;
+    width: 220px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+  .mp-logo-wrap img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
+  .mp-team-name {
+    flex: 0 0 71px;
+    margin-top: 40px;
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Anton', sans-serif;
+    font-size: 60px;
+    color: #161616;
+    text-align: center;
+    line-height: 1;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+  .mp-stats {
+    flex: 1;
+    margin-top: 9px;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+  }
+  .mp-stat-group {
+    flex: 1;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 11px;
+  }
+  .mp-stat-title {
+    font-family: 'General Sans', sans-serif;
+    font-weight: bold;
+    font-size: 21px;
+    color: #161616;
+    text-align: center;
+    line-height: 1;
+    text-transform: uppercase;
+  }
+  .mp-stat-value {
+    font-family: 'Anton', sans-serif;
+    font-size: 63px;
+    color: #161616;
+    text-align: center;
+    line-height: 1;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  /* Right plates — P6 to P10, stacked from top-right */
+  #plate-6  { right: 12px; top: 12px;  background-image: url('plateright.png'); }
+  #plate-7  { right: 12px; top: 212px; background-image: url('plateright.png'); }
+  #plate-8  { right: 12px; top: 412px; background-image: url('plateright.png'); }
+  #plate-9  { right: 12px; top: 612px; background-image: url('plateright.png'); }
+  #plate-10 { right: 12px; top: 812px; background-image: url('plateright.png'); }
+
+  /* ── Swap mode buttons ── */
+  .dbg-btn.active-home { background: #0a1a0a; color: #00e375; border-color: #008452; }
+  .dbg-btn.active-swap { background: #001a0a; color: #4dff88; border-color: #00aa44; }
+</style>
+</head>
+<body>
+<div class="canvas">
+
+  <!-- Gold border containers (behind plates) -->
+  <div class="gold-border" id="gold-left"></div>
+  <div class="gold-border" id="gold-right"></div>
+
+  <!-- Mid panels -->
+  <div class="mid-panel" id="mid-left">
+    <div class="mp-logo-wrap">
+      <img class="mp-logo" id="mp-left-logo" src="logo/TLPH.png" onerror="this.onerror=null;this.src='logo/TLPH.png'">
+    </div>
+    <div class="mp-team-name" id="mp-left-name">TLPH</div>
+    <div class="mp-stats">
+      <div class="mp-stat-group">
+        <div class="mp-stat-title">TOTAL<br>DAMAGE DEALT</div>
+        <div class="mp-stat-value" id="mp-left-dmg">--</div>
+      </div>
+      <div class="mp-stat-group">
+        <div class="mp-stat-title">TOTAL<br>DAMAGE TAKEN</div>
+        <div class="mp-stat-value" id="mp-left-taken">--</div>
+      </div>
+      <div class="mp-stat-group">
+        <div class="mp-stat-title">TOTAL<br>CONTROL TIME</div>
+        <div class="mp-stat-value" id="mp-left-ctrl">--</div>
+      </div>
+      <div class="mp-stat-group">
+        <div class="mp-stat-title">TOTAL<br>GOLD</div>
+        <div class="mp-stat-value" id="mp-left-gold">--</div>
+      </div>
+    </div>
+  </div>
+  <div class="mid-panel" id="mid-right">
+    <div class="mp-logo-wrap">
+      <img class="mp-logo" id="mp-right-logo" src="logo/RORA.png" onerror="this.onerror=null;this.src='logo/RORA.png'">
+    </div>
+    <div class="mp-team-name" id="mp-right-name">RORA</div>
+    <div class="mp-stats">
+      <div class="mp-stat-group">
+        <div class="mp-stat-title">TOTAL<br>DAMAGE DEALT</div>
+        <div class="mp-stat-value" id="mp-right-dmg">--</div>
+      </div>
+      <div class="mp-stat-group">
+        <div class="mp-stat-title">TOTAL<br>DAMAGE TAKEN</div>
+        <div class="mp-stat-value" id="mp-right-taken">--</div>
+      </div>
+      <div class="mp-stat-group">
+        <div class="mp-stat-title">TOTAL<br>CONTROL TIME</div>
+        <div class="mp-stat-value" id="mp-right-ctrl">--</div>
+      </div>
+      <div class="mp-stat-group">
+        <div class="mp-stat-title">TOTAL<br>GOLD</div>
+        <div class="mp-stat-value" id="mp-right-gold">--</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Left column: Players 1–5 -->
+  <div class="plate" id="plate-1">
+    <div class="_20900"    id="p1-gold">10562</div>
+    <div class="KILL">KILL</div>
+    <div class="DEATH">DEATH</div>
+    <div class="ASSIST">ASSIST</div>
+    <div class="_kill-val"  id="p1-kills">7</div>
+    <div class="_death-val" id="p1-deaths">8</div>
+    <div class="_31"        id="p1-assists">6</div>
+    <div class="SUPERMARCO"><span class="name-inner" id="p1-name">SuperAditTzy</span></div>
+    <div class="damage-taken-label">DAMAGE TAKEN</div>
+    <div class="damage-taken-val" id="p1-dmg-taken">98840</div>
+    <div class="ekg-zone-led">
+      <svg width="100%" height="28" viewBox="0 0 400 28" preserveAspectRatio="none">
+        <path id="p1-ekg-path" class="path-line" d=""/>
+      </svg>
+    </div>
+    <div class="heart-bpm"><svg viewBox="0 0 32 29.6" width="20" height="20"><path id="p1-heart-path" fill="rgb(255,1,1)" d="M16 29.6C16 29.6 0 19 0 9.4A9.4 9.4 0 0 1 16 3.5 9.4 9.4 0 0 1 32 9.4C32 19 16 29.6 16 29.6Z"/></svg></div>
+    <div class="_999"       id="p1-bpm">90</div>
+    <div class="hero-icon" id="p1-hero"><img src="" alt="" onerror="this.style.display='none'"><div class="death-timer" id="p1-death-timer"></div></div>
+    <div class="spell-icon" id="p1-spell"><img src="" alt="" onerror="this.style.display='none'"></div>
+    <div class="hp-bar-wrap" id="p1-hp-wrap">
+      <div class="hp-ghost" id="p1-hp-ghost" style="width:255px"></div>
+      <div class="hp-fill"  id="p1-hp-fill"  style="width:255px"></div>
+    </div>
+    <div class="level-circle" id="p1-level">
+      <svg viewBox="0 0 58 58" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="29" cy="29" r="26" fill="none" stroke="#161616" stroke-width="6"/>
+        <circle cx="29" cy="29" r="26" fill="none" stroke="#005bff" stroke-width="6"
+          stroke-dasharray="163.36" stroke-dashoffset="163.36"
+          class="level-arc" id="p1-level-arc" transform="rotate(-90 29 29)"/>
+        <circle cx="29" cy="29" r="21" fill="white"/>
+        <text x="29" y="29" text-anchor="middle" dominant-baseline="central"
+          fill="#161616" font-family="Anton" font-size="28" id="p1-level-text">1</text>
+      </svg>
+    </div>
+    <div class="role-icon"><img src="role/EXP LANER.png" alt=""></div>
+    <div class="item-slot" id="p1-item-1"><img data-item-id="9999" src="items/99999.png" onerror="this.src='items/99999.png'"></div>
+    <div class="item-slot" id="p1-item-2"><img data-item-id="9999" src="items/99999.png" onerror="this.src='items/99999.png'"></div>
+    <div class="item-slot" id="p1-item-3"><img data-item-id="9999" src="items/99999.png" onerror="this.src='items/99999.png'"></div>
+    <div class="item-slot" id="p1-item-4"><img data-item-id="9999" src="items/99999.png" onerror="this.src='items/99999.png'"></div>
+    <div class="item-slot" id="p1-item-5"><img data-item-id="9999" src="items/99999.png" onerror="this.src='items/99999.png'"></div>
+    <div class="item-slot" id="p1-item-6"><img data-item-id="9999" src="items/99999.png" onerror="this.src='items/99999.png'"></div>
+  </div>
+  <div class="plate" id="plate-2">
+    <div class="_20900" id="p2-gold">--</div>
+    <div class="KILL">KILL</div><div class="DEATH">DEATH</div><div class="ASSIST">ASSIST</div>
+    <div class="_kill-val" id="p2-kills">--</div>
+    <div class="_death-val" id="p2-deaths">--</div>
+    <div class="_31" id="p2-assists">--</div>
+    <div class="SUPERMARCO"><span class="name-inner" id="p2-name">--</span></div>
+    <div class="damage-taken-label">GOLD PER MINUTE</div>
+    <div class="damage-taken-val" id="p2-dmg-taken">--</div>
+    <div class="ekg-zone-led"><svg width="100%" height="28" viewBox="0 0 400 28" preserveAspectRatio="none"><path id="p2-ekg-path" class="path-line" d=""/></svg></div>
+    <div class="heart-bpm"><svg viewBox="0 0 32 29.6" width="20" height="20"><path id="p2-heart-path" fill="rgb(255,1,1)" d="M16 29.6C16 29.6 0 19 0 9.4A9.4 9.4 0 0 1 16 3.5 9.4 9.4 0 0 1 32 9.4C32 19 16 29.6 16 29.6Z"/></svg></div>
+    <div class="_999" id="p2-bpm">--</div>
+    <div class="hero-icon" id="p2-hero"><img src="" alt="" onerror="this.style.display='none'"><div class="death-timer" id="p2-death-timer"></div></div>
+    <div class="spell-icon" id="p2-spell"><img src="" alt="" onerror="this.style.display='none'"></div>
+    <div class="hp-bar-wrap" id="p2-hp-wrap"><div class="hp-ghost" id="p2-hp-ghost" style="width:255px"></div><div class="hp-fill" id="p2-hp-fill" style="width:255px"></div></div>
+    <div class="level-circle" id="p2-level"><svg viewBox="0 0 58 58" xmlns="http://www.w3.org/2000/svg"><circle cx="29" cy="29" r="26" fill="none" stroke="#161616" stroke-width="6"/><circle cx="29" cy="29" r="26" fill="none" stroke="#005bff" stroke-width="6" stroke-dasharray="163.36" stroke-dashoffset="163.36" class="level-arc" id="p2-level-arc" transform="rotate(-90 29 29)"/><circle cx="29" cy="29" r="21" fill="white"/><text x="29" y="29" text-anchor="middle" dominant-baseline="central" fill="#161616" font-family="Anton" font-size="28" id="p2-level-text">1</text></svg></div>
+    <div class="role-icon"><img src="role/JUNGLER.png" alt=""></div>
+    <div class="item-slot" id="p2-item-1"><img data-item-id="9999" src="items/99999.png" onerror="this.src='items/99999.png'"></div>
+    <div class="item-slot" id="p2-item-2"><img data-item-id="9999" src="items/99999.png" onerror="this.src='items/99999.png'"></div>
+    <div class="item-slot" id="p2-item-3"><img data-item-id="9999" src="items/99999.png" onerror="this.src='items/99999.png'"></div>
+    <div class="item-slot" id="p2-item-4"><img data-item-id="9999" src="items/99999.png" onerror="this.src='items/99999.png'"></div>
+    <div class="item-slot" id="p2-item-5"><img data-item-id="9999" src="items/99999.png" onerror="this.src='items/99999.png'"></div>
+    <div class="item-slot" id="p2-item-6"><img data-item-id="9999" src="items/99999.png" onerror="this.src='items/99999.png'"></div>
+  </div>
+  <div class="plate" id="plate-3">
+    <div class="_20900" id="p3-gold">--</div>
+    <div class="KILL">KILL</div><div class="DEATH">DEATH</div><div class="ASSIST">ASSIST</div>
+    <div class="_kill-val" id="p3-kills">--</div>
+    <div class="_death-val" id="p3-deaths">--</div>
+    <div class="_31" id="p3-assists">--</div>
+    <div class="SUPERMARCO"><span class="name-inner" id="p3-name">--</span></div>
+    <div class="damage-taken-label">DAMAGE DEALT</div>
+    <div class="damage-taken-val" id="p3-dmg-taken">--</div>
+    <div class="ekg-zone-led"><svg width="100%" height="28" viewBox="0 0 400 28" preserveAspectRatio="none"><path id="p3-ekg-path" class="path-line" d=""/></svg></div>
+    <div class="heart-bpm"><svg viewBox="0 0 32 29.6" width="20" height="20"><path id="p3-heart-path" fill="rgb(255,1,1)" d="M16 29.6C16 29.6 0 19 0 9.4A9.4 9.4 0 0 1 16 3.5 9.4 9.4 0 0 1 32 9.4C32 19 16 29.6 16 29.6Z"/></svg></div>
+    <div class="_999" id="p3-bpm">--</div>
+    <div class="hero-icon" id="p3-hero"><img src="" alt="" onerror="this.style.display='none'"><div class="death-timer" id="p3-death-timer"></div></div>
+    <div class="spell-icon" id="p3-spell"><img src="" alt="" onerror="this.style.display='none'"></div>
+    <div class="hp-bar-wrap" id="p3-hp-wrap"><div class="hp-ghost" id="p3-hp-ghost" style="width:255px"></div><div class="hp-fill" id="p3-hp-fill" style="width:255px"></div></div>
+    <div class="level-circle" id="p3-level"><svg viewBox="0 0 58 58" xmlns="http://www.w3.org/2000/svg"><circle cx="29" cy="29" r="26" fill="none" stroke="#161616" stroke-width="6"/><circle cx="29" cy="29" r="26" fill="none" stroke="#005bff" stroke-width="6" stroke-dasharray="163.36" stroke-dashoffset="163.36" class="level-arc" id="p3-level-arc" transform="rotate(-90 29 29)"/><circle cx="29" cy="29" r="21" fill="white"/><text x="29" y="29" text-anchor="middle" dominant-baseline="central" fill="#161616" font-family="Anton" font-size="28" id="p3-level-text">1</text></svg></div>
+    <div class="role-icon"><img src="role/MID LANER.png" alt=""></div>
+    <div class="item-slot" id="p3-item-1"><img data-item-id="9999" src="items/99999.png" onerror="this.src='items/99999.png'"></div>
+    <div class="item-slot" id="p3-item-2"><img data-item-id="9999" src="items/99999.png" onerror="this.src='items/99999.png'"></div>
+    <div class="item-slot" id="p3-item-3"><img data-item-id="9999" src="items/99999.png" onerror="this.src='items/99999.png'"></div>
+    <div class="item-slot" id="p3-item-4"><img data-item-id="9999" src="items/99999.png" onerror="this.src='items/99999.png'"></div>
+    <div class="item-slot" id="p3-item-5"><img data-item-id="9999" src="items/99999.png" onerror="this.src='items/99999.png'"></div>
+    <div class="item-slot" id="p3-item-6"><img data-item-id="9999" src="items/99999.png" onerror="this.src='items/99999.png'"></div>
+  </div>
+  <div class="plate" id="plate-4">
+    <div class="_20900" id="p4-gold">--</div>
+    <div class="KILL">KILL</div><div class="DEATH">DEATH</div><div class="ASSIST">ASSIST</div>
+    <div class="_kill-val" id="p4-kills">--</div>
+    <div class="_death-val" id="p4-deaths">--</div>
+    <div class="_31" id="p4-assists">--</div>
+    <div class="SUPERMARCO"><span class="name-inner" id="p4-name">--</span></div>
+    <div class="damage-taken-label">CONTROL TIME</div>
+    <div class="damage-taken-val" id="p4-dmg-taken">--</div>
+    <div class="ekg-zone-led"><svg width="100%" height="28" viewBox="0 0 400 28" preserveAspectRatio="none"><path id="p4-ekg-path" class="path-line" d=""/></svg></div>
+    <div class="heart-bpm"><svg viewBox="0 0 32 29.6" width="20" height="20"><path id="p4-heart-path" fill="rgb(255,1,1)" d="M16 29.6C16 29.6 0 19 0 9.4A9.4 9.4 0 0 1 16 3.5 9.4 9.4 0 0 1 32 9.4C32 19 16 29.6 16 29.6Z"/></svg></div>
+    <div class="_999" id="p4-bpm">--</div>
+    <div class="hero-icon" id="p4-hero"><img src="" alt="" onerror="this.style.display='none'"><div class="death-timer" id="p4-death-timer"></div></div>
+    <div class="spell-icon" id="p4-spell"><img src="" alt="" onerror="this.style.display='none'"></div>
+    <div class="hp-bar-wrap" id="p4-hp-wrap"><div class="hp-ghost" id="p4-hp-ghost" style="width:255px"></div><div class="hp-fill" id="p4-hp-fill" style="width:255px"></div></div>
+    <div class="level-circle" id="p4-level"><svg viewBox="0 0 58 58" xmlns="http://www.w3.org/2000/svg"><circle cx="29" cy="29" r="26" fill="none" stroke="#161616" stroke-width="6"/><circle cx="29" cy="29" r="26" fill="none" stroke="#005bff" stroke-width="6" stroke-dasharray="163.36" stroke-dashoffset="163.36" class="level-arc" id="p4-level-arc" transform="rotate(-90 29 29)"/><circle cx="29" cy="29" r="21" fill="white"/><text x="29" y="29" text-anchor="middle" dominant-baseline="central" fill="#161616" font-family="Anton" font-size="28" id="p4-level-text">1</text></svg></div>
+    <div class="role-icon"><img src="role/ROAMER.png" alt=""></div>
+    <div class="item-slot" id="p4-item-1"><img data-item-id="9999" src="items/99999.png" onerror="this.src='items/99999.png'"></div>
+    <div class="item-slot" id="p4-item-2"><img data-item-id="9999" src="items/99999.png" onerror="this.src='items/99999.png'"></div>
+    <div class="item-slot" id="p4-item-3"><img data-item-id="9999" src="items/99999.png" onerror="this.src='items/99999.png'"></div>
+    <div class="item-slot" id="p4-item-4"><img data-item-id="9999" src="items/99999.png" onerror="this.src='items/99999.png'"></div>
+    <div class="item-slot" id="p4-item-5"><img data-item-id="9999" src="items/99999.png" onerror="this.src='items/99999.png'"></div>
+    <div class="item-slot" id="p4-item-6"><img data-item-id="9999" src="items/99999.png" onerror="this.src='items/99999.png'"></div>
+  </div>
+  <div class="plate" id="plate-5">
+    <div class="_20900" id="p5-gold">--</div>
+    <div class="KILL">KILL</div><div class="DEATH">DEATH</div><div class="ASSIST">ASSIST</div>
+    <div class="_kill-val" id="p5-kills">--</div>
+    <div class="_death-val" id="p5-deaths">--</div>
+    <div class="_31" id="p5-assists">--</div>
+    <div class="SUPERMARCO"><span class="name-inner" id="p5-name">--</span></div>
+    <div class="damage-taken-label">GOLD PER MINUTE</div>
+    <div class="damage-taken-val" id="p5-dmg-taken">--</div>
+    <div class="ekg-zone-led"><svg width="100%" height="28" viewBox="0 0 400 28" preserveAspectRatio="none"><path id="p5-ekg-path" class="path-line" d=""/></svg></div>
+    <div class="heart-bpm"><svg viewBox="0 0 32 29.6" width="20" height="20"><path id="p5-heart-path" fill="rgb(255,1,1)" d="M16 29.6C16 29.6 0 19 0 9.4A9.4 9.4 0 0 1 16 3.5 9.4 9.4 0 0 1 32 9.4C32 19 16 29.6 16 29.6Z"/></svg></div>
+    <div class="_999" id="p5-bpm">--</div>
+    <div class="hero-icon" id="p5-hero"><img src="" alt="" onerror="this.style.display='none'"><div class="death-timer" id="p5-death-timer"></div></div>
+    <div class="spell-icon" id="p5-spell"><img src="" alt="" onerror="this.style.display='none'"></div>
+    <div class="hp-bar-wrap" id="p5-hp-wrap"><div class="hp-ghost" id="p5-hp-ghost" style="width:255px"></div><div class="hp-fill" id="p5-hp-fill" style="width:255px"></div></div>
+    <div class="level-circle" id="p5-level"><svg viewBox="0 0 58 58" xmlns="http://www.w3.org/2000/svg"><circle cx="29" cy="29" r="26" fill="none" stroke="#161616" stroke-width="6"/><circle cx="29" cy="29" r="26" fill="none" stroke="#005bff" stroke-width="6" stroke-dasharray="163.36" stroke-dashoffset="163.36" class="level-arc" id="p5-level-arc" transform="rotate(-90 29 29)"/><circle cx="29" cy="29" r="21" fill="white"/><text x="29" y="29" text-anchor="middle" dominant-baseline="central" fill="#161616" font-family="Anton" font-size="28" id="p5-level-text">1</text></svg></div>
+    <div class="role-icon"><img src="role/GOLD LANER.png" alt=""></div>
+    <div class="item-slot" id="p5-item-1"><img data-item-id="9999" src="items/99999.png" onerror="this.src='items/99999.png'"></div>
+    <div class="item-slot" id="p5-item-2"><img data-item-id="9999" src="items/99999.png" onerror="this.src='items/99999.png'"></div>
+    <div class="item-slot" id="p5-item-3"><img data-item-id="9999" src="items/99999.png" onerror="this.src='items/99999.png'"></div>
+    <div class="item-slot" id="p5-item-4"><img data-item-id="9999" src="items/99999.png" onerror="this.src='items/99999.png'"></div>
+    <div class="item-slot" id="p5-item-5"><img data-item-id="9999" src="items/99999.png" onerror="this.src='items/99999.png'"></div>
+    <div class="item-slot" id="p5-item-6"><img data-item-id="9999" src="items/99999.png" onerror="this.src='items/99999.png'"></div>
+  </div>
+
+  <!-- Right column: Players 6–10 -->
+  <div class="plate camp2" id="plate-6">
+    <div class="_20900" id="p6-gold">--</div>
+    <div class="KILL">KILL</div><div class="DEATH">DEATH</div><div class="ASSIST">ASSIST</div>
+    <div class="_kill-val" id="p6-kills">--</div>
+    <div class="_death-val" id="p6-deaths">--</div>
+    <div class="_31" id="p6-assists">--</div>
+    <div class="SUPERMARCO"><span class="name-inner" id="p6-name">--</span></div>
+    <div class="damage-taken-label">DAMAGE TAKEN</div>
+    <div class="damage-taken-val" id="p6-dmg-taken">--</div>
+    <div class="ekg-zone-led"><svg width="100%" height="28" viewBox="0 0 400 28" preserveAspectRatio="none"><path id="p6-ekg-path" class="path-line" d=""/></svg></div>
+    <div class="heart-bpm"><svg viewBox="0 0 32 29.6" width="20" height="20"><path id="p6-heart-path" fill="rgb(255,1,1)" d="M16 29.6C16 29.6 0 19 0 9.4A9.4 9.4 0 0 1 16 3.5 9.4 9.4 0 0 1 32 9.4C32 19 16 29.6 16 29.6Z"/></svg></div>
+    <div class="_999" id="p6-bpm">--</div>
+    <div class="hero-icon" id="p6-hero"><img src="" alt="" onerror="this.style.display='none'"><div class="death-timer" id="p6-death-timer"></div></div>
+    <div class="spell-icon" id="p6-spell"><img src="" alt="" onerror="this.style.display='none'"></div>
+    <div class="hp-bar-wrap" id="p6-hp-wrap"><div class="hp-ghost" id="p6-hp-ghost" style="width:255px"></div><div class="hp-fill" id="p6-hp-fill" style="width:255px"></div></div>
+    <div class="level-circle" id="p6-level"><svg viewBox="0 0 58 58" xmlns="http://www.w3.org/2000/svg"><circle cx="29" cy="29" r="26" fill="none" stroke="#161616" stroke-width="6"/><circle cx="29" cy="29" r="26" fill="none" stroke="#005bff" stroke-width="6" stroke-dasharray="163.36" stroke-dashoffset="163.36" class="level-arc" id="p6-level-arc" transform="rotate(-90 29 29)"/><circle cx="29" cy="29" r="21" fill="white"/><text x="29" y="29" text-anchor="middle" dominant-baseline="central" fill="#161616" font-family="Anton" font-size="28" id="p6-level-text">1</text></svg></div>
+    <div class="role-icon"><img src="role/EXP LANER.png" alt=""></div>
+    <div class="item-slot" id="p6-item-1"><img data-item-id="9999" src="items/99999.png" onerror="this.src='items/99999.png'"></div>
+    <div class="item-slot" id="p6-item-2"><img data-item-id="9999" src="items/99999.png" onerror="this.src='items/99999.png'"></div>
+    <div class="item-slot" id="p6-item-3"><img data-item-id="9999" src="items/99999.png" onerror="this.src='items/99999.png'"></div>
+    <div class="item-slot" id="p6-item-4"><img data-item-id="9999" src="items/99999.png" onerror="this.src='items/99999.png'"></div>
+    <div class="item-slot" id="p6-item-5"><img data-item-id="9999" src="items/99999.png" onerror="this.src='items/99999.png'"></div>
+    <div class="item-slot" id="p6-item-6"><img data-item-id="9999" src="items/99999.png" onerror="this.src='items/99999.png'"></div>
+  </div>
+  <div class="plate camp2" id="plate-7">
+    <div class="_20900" id="p7-gold">--</div>
+    <div class="KILL">KILL</div><div class="DEATH">DEATH</div><div class="ASSIST">ASSIST</div>
+    <div class="_kill-val" id="p7-kills">--</div>
+    <div class="_death-val" id="p7-deaths">--</div>
+    <div class="_31" id="p7-assists">--</div>
+    <div class="SUPERMARCO"><span class="name-inner" id="p7-name">--</span></div>
+    <div class="damage-taken-label">GOLD PER MINUTE</div>
+    <div class="damage-taken-val" id="p7-dmg-taken">--</div>
+    <div class="ekg-zone-led"><svg width="100%" height="28" viewBox="0 0 400 28" preserveAspectRatio="none"><path id="p7-ekg-path" class="path-line" d=""/></svg></div>
+    <div class="heart-bpm"><svg viewBox="0 0 32 29.6" width="20" height="20"><path id="p7-heart-path" fill="rgb(255,1,1)" d="M16 29.6C16 29.6 0 19 0 9.4A9.4 9.4 0 0 1 16 3.5 9.4 9.4 0 0 1 32 9.4C32 19 16 29.6 16 29.6Z"/></svg></div>
+    <div class="_999" id="p7-bpm">--</div>
+    <div class="hero-icon" id="p7-hero"><img src="" alt="" onerror="this.style.display='none'"><div class="death-timer" id="p7-death-timer"></div></div>
+    <div class="spell-icon" id="p7-spell"><img src="" alt="" onerror="this.style.display='none'"></div>
+    <div class="hp-bar-wrap" id="p7-hp-wrap"><div class="hp-ghost" id="p7-hp-ghost" style="width:255px"></div><div class="hp-fill" id="p7-hp-fill" style="width:255px"></div></div>
+    <div class="level-circle" id="p7-level"><svg viewBox="0 0 58 58" xmlns="http://www.w3.org/2000/svg"><circle cx="29" cy="29" r="26" fill="none" stroke="#161616" stroke-width="6"/><circle cx="29" cy="29" r="26" fill="none" stroke="#005bff" stroke-width="6" stroke-dasharray="163.36" stroke-dashoffset="163.36" class="level-arc" id="p7-level-arc" transform="rotate(-90 29 29)"/><circle cx="29" cy="29" r="21" fill="white"/><text x="29" y="29" text-anchor="middle" dominant-baseline="central" fill="#161616" font-family="Anton" font-size="28" id="p7-level-text">1</text></svg></div>
+    <div class="role-icon"><img src="role/JUNGLER.png" alt=""></div>
+    <div class="item-slot" id="p7-item-1"><img data-item-id="9999" src="items/99999.png" onerror="this.src='items/99999.png'"></div>
+    <div class="item-slot" id="p7-item-2"><img data-item-id="9999" src="items/99999.png" onerror="this.src='items/99999.png'"></div>
+    <div class="item-slot" id="p7-item-3"><img data-item-id="9999" src="items/99999.png" onerror="this.src='items/99999.png'"></div>
+    <div class="item-slot" id="p7-item-4"><img data-item-id="9999" src="items/99999.png" onerror="this.src='items/99999.png'"></div>
+    <div class="item-slot" id="p7-item-5"><img data-item-id="9999" src="items/99999.png" onerror="this.src='items/99999.png'"></div>
+    <div class="item-slot" id="p7-item-6"><img data-item-id="9999" src="items/99999.png" onerror="this.src='items/99999.png'"></div>
+  </div>
+  <div class="plate camp2" id="plate-8">
+    <div class="_20900" id="p8-gold">--</div>
+    <div class="KILL">KILL</div><div class="DEATH">DEATH</div><div class="ASSIST">ASSIST</div>
+    <div class="_kill-val" id="p8-kills">--</div>
+    <div class="_death-val" id="p8-deaths">--</div>
+    <div class="_31" id="p8-assists">--</div>
+    <div class="SUPERMARCO"><span class="name-inner" id="p8-name">--</span></div>
+    <div class="damage-taken-label">DAMAGE DEALT</div>
+    <div class="damage-taken-val" id="p8-dmg-taken">--</div>
+    <div class="ekg-zone-led"><svg width="100%" height="28" viewBox="0 0 400 28" preserveAspectRatio="none"><path id="p8-ekg-path" class="path-line" d=""/></svg></div>
+    <div class="heart-bpm"><svg viewBox="0 0 32 29.6" width="20" height="20"><path id="p8-heart-path" fill="rgb(255,1,1)" d="M16 29.6C16 29.6 0 19 0 9.4A9.4 9.4 0 0 1 16 3.5 9.4 9.4 0 0 1 32 9.4C32 19 16 29.6 16 29.6Z"/></svg></div>
+    <div class="_999" id="p8-bpm">--</div>
+    <div class="hero-icon" id="p8-hero"><img src="" alt="" onerror="this.style.display='none'"><div class="death-timer" id="p8-death-timer"></div></div>
+    <div class="spell-icon" id="p8-spell"><img src="" alt="" onerror="this.style.display='none'"></div>
+    <div class="hp-bar-wrap" id="p8-hp-wrap"><div class="hp-ghost" id="p8-hp-ghost" style="width:255px"></div><div class="hp-fill" id="p8-hp-fill" style="width:255px"></div></div>
+    <div class="level-circle" id="p8-level"><svg viewBox="0 0 58 58" xmlns="http://www.w3.org/2000/svg"><circle cx="29" cy="29" r="26" fill="none" stroke="#161616" stroke-width="6"/><circle cx="29" cy="29" r="26" fill="none" stroke="#005bff" stroke-width="6" stroke-dasharray="163.36" stroke-dashoffset="163.36" class="level-arc" id="p8-level-arc" transform="rotate(-90 29 29)"/><circle cx="29" cy="29" r="21" fill="white"/><text x="29" y="29" text-anchor="middle" dominant-baseline="central" fill="#161616" font-family="Anton" font-size="28" id="p8-level-text">1</text></svg></div>
+    <div class="role-icon"><img src="role/MID LANER.png" alt=""></div>
+    <div class="item-slot" id="p8-item-1"><img data-item-id="9999" src="items/99999.png" onerror="this.src='items/99999.png'"></div>
+    <div class="item-slot" id="p8-item-2"><img data-item-id="9999" src="items/99999.png" onerror="this.src='items/99999.png'"></div>
+    <div class="item-slot" id="p8-item-3"><img data-item-id="9999" src="items/99999.png" onerror="this.src='items/99999.png'"></div>
+    <div class="item-slot" id="p8-item-4"><img data-item-id="9999" src="items/99999.png" onerror="this.src='items/99999.png'"></div>
+    <div class="item-slot" id="p8-item-5"><img data-item-id="9999" src="items/99999.png" onerror="this.src='items/99999.png'"></div>
+    <div class="item-slot" id="p8-item-6"><img data-item-id="9999" src="items/99999.png" onerror="this.src='items/99999.png'"></div>
+  </div>
+  <div class="plate camp2" id="plate-9">
+    <div class="_20900" id="p9-gold">--</div>
+    <div class="KILL">KILL</div><div class="DEATH">DEATH</div><div class="ASSIST">ASSIST</div>
+    <div class="_kill-val" id="p9-kills">--</div>
+    <div class="_death-val" id="p9-deaths">--</div>
+    <div class="_31" id="p9-assists">--</div>
+    <div class="SUPERMARCO"><span class="name-inner" id="p9-name">--</span></div>
+    <div class="damage-taken-label">CONTROL TIME</div>
+    <div class="damage-taken-val" id="p9-dmg-taken">--</div>
+    <div class="ekg-zone-led"><svg width="100%" height="28" viewBox="0 0 400 28" preserveAspectRatio="none"><path id="p9-ekg-path" class="path-line" d=""/></svg></div>
+    <div class="heart-bpm"><svg viewBox="0 0 32 29.6" width="20" height="20"><path id="p9-heart-path" fill="rgb(255,1,1)" d="M16 29.6C16 29.6 0 19 0 9.4A9.4 9.4 0 0 1 16 3.5 9.4 9.4 0 0 1 32 9.4C32 19 16 29.6 16 29.6Z"/></svg></div>
+    <div class="_999" id="p9-bpm">--</div>
+    <div class="hero-icon" id="p9-hero"><img src="" alt="" onerror="this.style.display='none'"><div class="death-timer" id="p9-death-timer"></div></div>
+    <div class="spell-icon" id="p9-spell"><img src="" alt="" onerror="this.style.display='none'"></div>
+    <div class="hp-bar-wrap" id="p9-hp-wrap"><div class="hp-ghost" id="p9-hp-ghost" style="width:255px"></div><div class="hp-fill" id="p9-hp-fill" style="width:255px"></div></div>
+    <div class="level-circle" id="p9-level"><svg viewBox="0 0 58 58" xmlns="http://www.w3.org/2000/svg"><circle cx="29" cy="29" r="26" fill="none" stroke="#161616" stroke-width="6"/><circle cx="29" cy="29" r="26" fill="none" stroke="#005bff" stroke-width="6" stroke-dasharray="163.36" stroke-dashoffset="163.36" class="level-arc" id="p9-level-arc" transform="rotate(-90 29 29)"/><circle cx="29" cy="29" r="21" fill="white"/><text x="29" y="29" text-anchor="middle" dominant-baseline="central" fill="#161616" font-family="Anton" font-size="28" id="p9-level-text">1</text></svg></div>
+    <div class="role-icon"><img src="role/ROAMER.png" alt=""></div>
+    <div class="item-slot" id="p9-item-1"><img data-item-id="9999" src="items/99999.png" onerror="this.src='items/99999.png'"></div>
+    <div class="item-slot" id="p9-item-2"><img data-item-id="9999" src="items/99999.png" onerror="this.src='items/99999.png'"></div>
+    <div class="item-slot" id="p9-item-3"><img data-item-id="9999" src="items/99999.png" onerror="this.src='items/99999.png'"></div>
+    <div class="item-slot" id="p9-item-4"><img data-item-id="9999" src="items/99999.png" onerror="this.src='items/99999.png'"></div>
+    <div class="item-slot" id="p9-item-5"><img data-item-id="9999" src="items/99999.png" onerror="this.src='items/99999.png'"></div>
+    <div class="item-slot" id="p9-item-6"><img data-item-id="9999" src="items/99999.png" onerror="this.src='items/99999.png'"></div>
+  </div>
+  <div class="plate camp2" id="plate-10">
+    <div class="_20900" id="p10-gold">--</div>
+    <div class="KILL">KILL</div><div class="DEATH">DEATH</div><div class="ASSIST">ASSIST</div>
+    <div class="_kill-val" id="p10-kills">--</div>
+    <div class="_death-val" id="p10-deaths">--</div>
+    <div class="_31" id="p10-assists">--</div>
+    <div class="SUPERMARCO"><span class="name-inner" id="p10-name">--</span></div>
+    <div class="damage-taken-label">GOLD PER MINUTE</div>
+    <div class="damage-taken-val" id="p10-dmg-taken">--</div>
+    <div class="ekg-zone-led"><svg width="100%" height="28" viewBox="0 0 400 28" preserveAspectRatio="none"><path id="p10-ekg-path" class="path-line" d=""/></svg></div>
+    <div class="heart-bpm"><svg viewBox="0 0 32 29.6" width="20" height="20"><path id="p10-heart-path" fill="rgb(255,1,1)" d="M16 29.6C16 29.6 0 19 0 9.4A9.4 9.4 0 0 1 16 3.5 9.4 9.4 0 0 1 32 9.4C32 19 16 29.6 16 29.6Z"/></svg></div>
+    <div class="_999" id="p10-bpm">--</div>
+    <div class="hero-icon" id="p10-hero"><img src="" alt="" onerror="this.style.display='none'"><div class="death-timer" id="p10-death-timer"></div></div>
+    <div class="spell-icon" id="p10-spell"><img src="" alt="" onerror="this.style.display='none'"></div>
+    <div class="hp-bar-wrap" id="p10-hp-wrap"><div class="hp-ghost" id="p10-hp-ghost" style="width:255px"></div><div class="hp-fill" id="p10-hp-fill" style="width:255px"></div></div>
+    <div class="level-circle" id="p10-level"><svg viewBox="0 0 58 58" xmlns="http://www.w3.org/2000/svg"><circle cx="29" cy="29" r="26" fill="none" stroke="#161616" stroke-width="6"/><circle cx="29" cy="29" r="26" fill="none" stroke="#005bff" stroke-width="6" stroke-dasharray="163.36" stroke-dashoffset="163.36" class="level-arc" id="p10-level-arc" transform="rotate(-90 29 29)"/><circle cx="29" cy="29" r="21" fill="white"/><text x="29" y="29" text-anchor="middle" dominant-baseline="central" fill="#161616" font-family="Anton" font-size="28" id="p10-level-text">1</text></svg></div>
+    <div class="role-icon"><img src="role/GOLD LANER.png" alt=""></div>
+    <div class="item-slot" id="p10-item-1"><img data-item-id="9999" src="items/99999.png" onerror="this.src='items/99999.png'"></div>
+    <div class="item-slot" id="p10-item-2"><img data-item-id="9999" src="items/99999.png" onerror="this.src='items/99999.png'"></div>
+    <div class="item-slot" id="p10-item-3"><img data-item-id="9999" src="items/99999.png" onerror="this.src='items/99999.png'"></div>
+    <div class="item-slot" id="p10-item-4"><img data-item-id="9999" src="items/99999.png" onerror="this.src='items/99999.png'"></div>
+    <div class="item-slot" id="p10-item-5"><img data-item-id="9999" src="items/99999.png" onerror="this.src='items/99999.png'"></div>
+    <div class="item-slot" id="p10-item-6"><img data-item-id="9999" src="items/99999.png" onerror="this.src='items/99999.png'"></div>
+  </div>
+
+</div>
+
+<!-- Debug panel — toggle with ` -->
+<div id="debug-panel">
+  <div class="dbg-title">Layout</div>
+  <div class="dbg-row">
+    <div class="dbg-btn active-home" id="btn-home" onclick="setSwap(false)">HOME</div>
+    <div class="dbg-btn"             id="btn-swap" onclick="setSwap(true)">SWAP</div>
+  </div>
+
+  <div class="dbg-title" style="margin-top:12px">Sub-Info URL</div>
+  <div class="dbg-row">
+    <input id="dbg-url-input" type="text" placeholder="Sub-info URL">
+    <div class="dbg-btn" onclick="applyLiveUrl()" style="flex:0 0 auto">Apply</div>
+  </div>
+
+  <div class="dbg-title" style="margin-top:10px">Server (BPM) URL</div>
+  <div class="dbg-row">
+    <input id="dbg-feed-input" type="text" placeholder="Feed URL">
+    <div class="dbg-btn" onclick="applyFeedUrl()" style="flex:0 0 auto">Apply</div>
+  </div>
+  <div id="dbg-status" style="font-size:9px;color:rgba(255,255,255,0.4);margin-top:6px;word-break:break-all;">—</div>
+
+  <div class="dbg-row" style="margin-top:6px">
+    <div class="dbg-btn" onclick="updateLevelCircle(document.getElementById('p1-level-arc'),document.getElementById('p1-level-text'),14,33)" style="background:#001a33;color:#66aaff;border-color:#0055cc">Test Level (14 / 33%)</div>
+  </div>
+
+  <div class="dbg-title" style="margin-top:12px">HP Debug — P1</div>
+  <div class="dbg-row">
+    <div class="dbg-btn red" onclick="debugHP(0.05)">−5% HP</div>
+    <div class="dbg-btn red" onclick="debugHP(0.10)">−10% HP</div>
+  </div>
+  <div class="dbg-row">
+    <div class="dbg-btn red" onclick="debugHP(0.25)">−25% HP</div>
+    <div class="dbg-btn red" onclick="debugHP(0.50)">−50% HP</div>
+  </div>
+  <div class="dbg-row">
+    <div class="dbg-btn green" onclick="debugHPReset()">RESET HP</div>
+  </div>
+
+  <div class="dbg-title" style="margin-top:12px">Item Debug — P1</div>
+  <div class="dbg-row">
+    <div class="dbg-btn green"  onclick="debugAddItem()">+ Add Next Item</div>
+  </div>
+  <div class="dbg-row">
+    <div class="dbg-btn purple" onclick="debugCombineItem()">Combine (next filled)</div>
+  </div>
+  <div class="dbg-row">
+    <div class="dbg-btn red"    onclick="debugClearItems()">Clear Items</div>
+  </div>
+  <div class="dbg-title" style="margin-top:12px">Death Timer Debug</div>
+  <div class="dbg-row">
+    <select id="dbg-death-plate" style="flex:1;padding:5px 6px;background:#1a1a1a;border:1px solid #444;border-radius:4px;color:#ccc;font-size:9px;font-family:monospace">
+      <option value="1">Plate 1</option><option value="2">Plate 2</option><option value="3">Plate 3</option>
+      <option value="4">Plate 4</option><option value="5">Plate 5</option><option value="6">Plate 6</option>
+      <option value="7">Plate 7</option><option value="8">Plate 8</option><option value="9">Plate 9</option>
+      <option value="10">Plate 10</option>
+    </select>
+    <input id="dbg-death-secs" type="number" value="10" min="1" max="60" style="width:48px;padding:5px 6px;background:#1a1a1a;border:1px solid #444;border-radius:4px;color:#ccc;font-size:9px;font-family:monospace">
+  </div>
+  <div class="dbg-row">
+    <div class="dbg-btn red"   onclick="debugDeath()">Kill (start timer)</div>
+    <div class="dbg-btn green" onclick="debugRevive()">Revive (clear)</div>
+  </div>
+  <div id="dbg-death-status" style="font-size:9px;color:rgba(255,255,255,0.4);margin-top:4px;text-align:center">—</div>
+
+  <div class="dbg-hint">` to toggle</div>
+</div>
+
+<script>
+  const DEFAULT_SUB_INFO_URL = 'http://localhost:3000/api/sub-info/';
+  const DEFAULT_FEED_URL     = 'http://172.16.10.50:3000/feed';
+  const POLL_MS = 1000;
+
+  let liveSubInfoUrl = localStorage.getItem('subInfoUrl') || DEFAULT_SUB_INFO_URL;
+  let liveFeedUrl    = localStorage.getItem('feedUrl')    || DEFAULT_FEED_URL;
+  document.getElementById('dbg-url-input').value  = liveSubInfoUrl;
+  document.getElementById('dbg-feed-input').value = liveFeedUrl;
+
+  function applyLiveUrl() {
+    const val = document.getElementById('dbg-url-input').value.trim();
+    if (val) { liveSubInfoUrl = val; localStorage.setItem('subInfoUrl', liveSubInfoUrl); }
+    pollSubInfo();
+  }
+
+  function applyFeedUrl() {
+    const val = document.getElementById('dbg-feed-input').value.trim();
+    if (val) { liveFeedUrl = val; localStorage.setItem('feedUrl', liveFeedUrl); }
+    pollFeed();
+  }
+
+  /* ── Swap state ── */
+  let isSwapped = localStorage.getItem('ledSwap') === '1';
+
+  function setSwap(swap) {
+    isSwapped = swap;
+    localStorage.setItem('ledSwap', swap ? '1' : '0');
+    document.getElementById('btn-home').className = swap ? 'dbg-btn'             : 'dbg-btn active-home';
+    document.getElementById('btn-swap').className = swap ? 'dbg-btn active-swap' : 'dbg-btn';
+    pollSubInfo();
+    pollFeed();
+  }
+
+  /* apply persisted swap state on load */
+  setSwap(isSwapped);
+
+  /* ── SSE — remote HOME/SWAP via /led/home and /led/swap ── */
+  let _sseSource = null, _sseRetry = null;
+  function connectSSE() {
+    if (_sseSource) { _sseSource.close(); _sseSource = null; }
+    clearTimeout(_sseRetry);
+    try {
+      const base = new URL(liveFeedUrl).origin;
+      _sseSource = new EventSource(base + '/overlay/events');
+      _sseSource.addEventListener('led_side', e => {
+        try { const d = JSON.parse(e.data); setSwap(d.side === 'swap'); } catch {}
+      });
+      _sseSource.onerror = () => {
+        _sseSource.close(); _sseSource = null;
+        _sseRetry = setTimeout(connectSSE, 5000);
+      };
+    } catch {}
+  }
+  connectSSE();
+
+  const HP_BAR_W = 255;
+
+  /* ── Player states (1–10) ── */
+  function makePlayerState(n) {
+    return {
+      n,
+      equipState: Array(6).fill('9999'),
+      barSide: n >= 6 ? 'right' : 'left',
+      itemSlots: [1,2,3,4,5,6].map(s => document.getElementById(`p${n}-item-${s}`)),
+      hpCurrent: 1.0,
+      hpGhost: 1.0,
+      ghostTimer: null,
+      maxHp: 1000,
+      hpFillEl:  document.getElementById(`p${n}-hp-fill`),
+      hpGhostEl: document.getElementById(`p${n}-hp-ghost`),
+      dead:            false,
+      deathAnchorGame: null,
+      deathAnchorWall: null,
+      deathDriftRate:  0,
+      prevDead:        false,
+      deathTimerEl:    document.getElementById(`p${n}-death-timer`),
+      heroIconEl:      document.getElementById(`p${n}-hero`),
+    };
+  }
+  const playerStates = Array.from({length: 11}, (_, n) => n === 0 ? null : makePlayerState(n));
+
+  /* ── Item system ── */
+  function buildVisualLayout(equipState, side) {
+    const filled = equipState.filter(id => id !== '9999');
+    const layout = Array(6).fill('9999');
+    if (side === 'right') {
+      for (let i = 0; i < filled.length; i++) layout[5 - i] = filled[i];
+    } else {
+      for (let i = 0; i < filled.length; i++) layout[i] = filled[i];
+    }
+    return layout;
+  }
+
+  function applyCompactLayout(p, newLayout, skipPop = false) {
+    const oldIds = p.itemSlots.map(s => s.querySelector('img').dataset.itemId || '9999');
+    if (oldIds.join(',') === newLayout.join(',')) return;
+
+    const oldRects = p.itemSlots.map(s => s.getBoundingClientRect());
+
+    newLayout.forEach((newId, j) => {
+      const imgEl = p.itemSlots[j].querySelector('img');
+      if (newId === (imgEl.dataset.itemId || '9999')) return;
+      imgEl.dataset.itemId = newId;
+      imgEl.src = `items/${newId === '9999' ? '99999' : newId}.png`;
+      imgEl.onerror = () => { imgEl.src = 'items/99999.png'; };
+    });
+
+    // track which old visual slots are being vacated by a slide
+    const slidingFrom = new Set();
+    newLayout.forEach((newId, j) => {
+      if (newId === '9999') return;
+      const oldJ = oldIds.indexOf(newId);
+      if (oldJ !== -1 && oldJ !== j) slidingFrom.add(oldJ);
+    });
+
+    newLayout.forEach((newId, j) => {
+      if (newId === '9999') {
+        const imgEl = p.itemSlots[j].querySelector('img');
+        imgEl.style.transition = '';
+        imgEl.style.transform  = '';
+        return;
+      }
+      const oldJ   = oldIds.indexOf(newId);
+      const imgEl  = p.itemSlots[j].querySelector('img');
+      const slotEl = p.itemSlots[j];
+      if (oldJ !== -1 && oldJ !== j) {
+        const dx = oldRects[oldJ].left - oldRects[j].left;
+        imgEl.style.transition = 'none';
+        imgEl.style.transform  = `translateX(${dx}px)`;
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+          imgEl.style.transition = 'transform 0.35s cubic-bezier(0.22,1,0.36,1)';
+          imgEl.style.transform  = 'translateX(0)';
+          setTimeout(() => { imgEl.style.transition = ''; imgEl.style.transform = ''; }, 400);
+        }));
+      } else if (oldJ === -1 && !skipPop) {
+        // delay pop if a sliding item is vacating this slot to avoid visual overlap
+        const delay = slidingFrom.has(j) ? 200 : 0;
+        setTimeout(() => {
+          slotEl.classList.remove('item-pop', 'item-combine');
+          void slotEl.offsetWidth;
+          slotEl.classList.add('item-pop');
+        }, delay);
+      }
+    });
+  }
+
+  function runCombineAnimation(p, sourceVisualJs, destOldJ, destNewId, newLayout) {
+    const destSlotEl = p.itemSlots[destOldJ];
+    const destRect   = destSlotEl.getBoundingClientRect();
+    const destImg    = destSlotEl.querySelector('img');
+
+    destImg.dataset.itemId = destNewId;
+    sourceVisualJs.forEach(j => {
+      p.itemSlots[j].querySelector('img').dataset.itemId = '9999';
+    });
+
+    const ghosts = sourceVisualJs.map(j => {
+      const srcSlot = p.itemSlots[j];
+      const srcRect = srcSlot.getBoundingClientRect();
+      const srcImg  = srcSlot.querySelector('img');
+      const dx = (destRect.left + destRect.width  / 2) - (srcRect.left + srcRect.width  / 2);
+      const dy = (destRect.top  + destRect.height / 2) - (srcRect.top  + srcRect.height / 2);
+
+      const ghost = document.createElement('img');
+      ghost.src = srcImg.src;
+      ghost.style.cssText = [
+        'position:fixed',
+        `left:${srcRect.left}px`, `top:${srcRect.top}px`,
+        `width:${srcRect.width}px`, `height:${srcRect.height}px`,
+        'border-radius:4px', 'pointer-events:none', 'z-index:9999',
+        'transition:transform 0.38s cubic-bezier(0.4,0,0.8,1),opacity 0.32s ease-in',
+        'will-change:transform,opacity',
+      ].join(';');
+      document.body.appendChild(ghost);
+      srcImg.style.opacity = '0';
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        ghost.style.transform = `translate(${dx}px,${dy}px) scale(0.5)`;
+        ghost.style.opacity   = '0';
+      }));
+      return { ghost, srcImg };
+    });
+
+    setTimeout(() => {
+      ghosts.forEach(({ ghost, srcImg }) => {
+        ghost.remove();
+        srcImg.src = 'items/99999.png';
+        srcImg.style.opacity = '';
+      });
+      destImg.src     = `items/${destNewId}.png`;
+      destImg.onerror = () => { destImg.src = 'items/99999.png'; };
+      destImg.style.opacity = '';
+      destSlotEl.classList.remove('item-pop', 'item-combine');
+      void destSlotEl.offsetWidth;
+      destSlotEl.classList.add('item-combine');
+      applyCompactLayout(p, newLayout, true);
+    }, 420);
+  }
+
+  function updateItems(p, equipList) {
+    const newEquipState = [];
+    for (let i = 0; i < 6; i++) {
+      const item = equipList && equipList[i];
+      const val  = item ? item.value : 9999;
+      newEquipState.push((!val || val === 9999) ? '9999' : String(val));
+    }
+    if (newEquipState.join(',') === p.equipState.join(',')) return;
+
+    const oldEquipState = p.equipState;
+    const oldLayout     = buildVisualLayout(oldEquipState, p.barSide);
+    const newLayout     = buildVisualLayout(newEquipState, p.barSide);
+
+    const isCombine =
+      oldEquipState.some((id, i) => id !== '9999' && newEquipState[i] === '9999') &&
+      newEquipState.some((id, i) => id !== '9999' && id !== oldEquipState[i]);
+
+    p.equipState = newEquipState;
+
+    if (isCombine) {
+      const sourceVisualJs = [];
+      oldEquipState.forEach((id, i) => {
+        if (id !== '9999' && newEquipState[i] === '9999') {
+          const vj = oldLayout.indexOf(id);
+          if (vj !== -1) sourceVisualJs.push(vj);
+        }
+      });
+      let destApiIdx = -1;
+      for (let i = 0; i < 6; i++) {
+        if (newEquipState[i] !== '9999' && newEquipState[i] !== oldEquipState[i]) { destApiIdx = i; break; }
+      }
+      const destOldItemId = oldEquipState[destApiIdx];
+      let destOldJ = (destOldItemId && destOldItemId !== '9999')
+        ? oldLayout.indexOf(destOldItemId)
+        : newLayout.indexOf(newEquipState[destApiIdx]);
+      if (destOldJ === -1) destOldJ = newLayout.indexOf(newEquipState[destApiIdx]);
+      runCombineAnimation(p, sourceVisualJs, destOldJ, newEquipState[destApiIdx], newLayout);
+    } else {
+      applyCompactLayout(p, newLayout);
+    }
+  }
+
+  /* ── Helpers ── */
+  function squeezeName(innerEl, maxPx) {
+    innerEl.style.transform = '';
+    const w = innerEl.scrollWidth;
+    if (w > maxPx) {
+      innerEl.style.transformOrigin = 'center center';
+      innerEl.style.transform = `scaleX(${maxPx / w})`;
+    }
+  }
+
+  const LEVEL_CIRC = 163.36; /* 2π * r=26 */
+  function updateLevelCircle(arcEl, textEl, level, percent) {
+    textEl.textContent = level ?? '--';
+    arcEl.setAttribute('stroke-dashoffset', LEVEL_CIRC * (1 - Math.max(0, Math.min(100, percent ?? 0)) / 100));
+  }
+
+  function setHP(state, curHp, maxHp) {
+    if (!state.hpFillEl || maxHp <= 0) return;
+    const newFrac = Math.max(0, Math.min(1, curHp / maxHp));
+    if (newFrac < state.hpCurrent - 0.001) {
+      state.hpGhost   = Math.max(state.hpGhost, state.hpCurrent);
+      state.hpCurrent = newFrac;
+      state.hpFillEl.style.transition  = 'none';
+      state.hpFillEl.style.width       = (newFrac * HP_BAR_W) + 'px';
+      state.hpGhostEl.style.transition = 'none';
+      state.hpGhostEl.style.width      = (state.hpGhost * HP_BAR_W) + 'px';
+      clearTimeout(state.ghostTimer);
+      state.ghostTimer = setTimeout(() => {
+        state.hpGhostEl.style.transition = 'width 0.45s ease-in';
+        state.hpGhostEl.style.width      = (state.hpCurrent * HP_BAR_W) + 'px';
+        state.hpGhost = state.hpCurrent;
+      }, 550);
+    } else {
+      state.hpCurrent = newFrac;
+      state.hpGhost   = newFrac;
+      clearTimeout(state.ghostTimer);
+      state.hpFillEl.style.transition  = 'none';
+      state.hpFillEl.style.width       = (newFrac * HP_BAR_W) + 'px';
+      state.hpGhostEl.style.transition = 'none';
+      state.hpGhostEl.style.width      = (newFrac * HP_BAR_W) + 'px';
+    }
+    state.maxHp = maxHp;
+  }
+
+  function getSeats(camp) {
+    return ['seat_1','seat_2','seat_3','seat_4','seat_5']
+      .map(k => camp[k])
+      .filter(s => s && !s.judger);
+  }
+
+  function findPlayer(campList, seatNum) {
+    const campId  = seatNum <= 5 ? 1 : 2;
+    const seatKey = seatNum <= 5 ? `seat_${seatNum}` : `seat_${seatNum - 5}`;
+    const camp    = campList.find(c => c.campid === campId);
+    return camp?.[seatKey] ?? null;
+  }
+
+  /* ── Per-plate special stat config ── */
+  const _ct = p => { const ms = p.control_time_ms; return ms != null ? (ms / 1000).toFixed(2) + 's' : '--'; };
+  const PLATE_STAT = [
+    null,
+    p => p.total_hurt          ?? '--',   // plate 1 — Damage Taken
+    p => p.extra_param?.gpm    ?? '--',   // plate 2 — Gold Per Minute
+    p => p.total_damage        ?? '--',   // plate 3 — Damage Dealt
+    _ct,                                  // plate 4 — Control Time
+    p => p.extra_param?.gpm    ?? '--',   // plate 5 — Gold Per Minute
+    p => p.total_hurt          ?? '--',   // plate 6 — Damage Taken
+    p => p.extra_param?.gpm    ?? '--',   // plate 7 — Gold Per Minute
+    p => p.total_damage        ?? '--',   // plate 8 — Damage Dealt
+    _ct,                                  // plate 9 — Control Time
+    p => p.extra_param?.gpm    ?? '--',   // plate 10 — Gold Per Minute
+  ];
+
+  /* ── Poll ── */
+  function applyPlayerData(n, player) {
+    const state = playerStates[n];
+    document.getElementById(`p${n}-gold`).textContent      = player.gold       ?? '--';
+    document.getElementById(`p${n}-kills`).textContent     = player.kill_num   ?? '--';
+    document.getElementById(`p${n}-deaths`).textContent    = player.dead_num   ?? '--';
+    document.getElementById(`p${n}-assists`).textContent   = player.assist_num ?? '--';
+    document.getElementById(`p${n}-dmg-taken`).textContent = PLATE_STAT[n]?.(player) ?? '--';
+
+    const nameEl = document.getElementById(`p${n}-name`);
+    nameEl.textContent = player.name ?? '';
+    squeezeName(nameEl, 190);
+
+    updateItems(state, (player.equip_list || []).slice(0, 6));
+
+    const heroImg = document.getElementById(`p${n}-hero`).querySelector('img');
+    const heroSrc = `hero/${player.heroid}_POST_HERO.png`;
+    if (!heroImg.src.endsWith(heroSrc)) { heroImg.style.display = ''; heroImg.src = heroSrc; }
+
+    const spellImg = document.getElementById(`p${n}-spell`).querySelector('img');
+    const spellSrc = `skill/${player.skillid}.png`;
+    if (!spellImg.src.endsWith(spellSrc)) { spellImg.style.display = ''; spellImg.src = spellSrc; }
+
+    updateLevelCircle(
+      document.getElementById(`p${n}-level-arc`),
+      document.getElementById(`p${n}-level-text`),
+      player.level, player.level_percent
+    );
+
+    if (player.max_health_point) {
+      setHP(state, player.cur_health_point ?? state.maxHp, player.max_health_point);
+    }
+
+    /* ── Death timer anchor (smooth countdown) ── */
+    if (player.dead && player.revive_left_time > 0) {
+      const apiMs = player.revive_left_time * 1000;
+      const now   = Date.now();
+      if (state.deathAnchorGame === null) {
+        state.deathAnchorGame = apiMs;
+        state.deathAnchorWall = now;
+        state.deathDriftRate  = 0;
+      } else {
+        const elapsed = now - state.deathAnchorWall;
+        const localMs = state.deathAnchorGame - elapsed * (1 + state.deathDriftRate);
+        const drift   = localMs - apiMs;
+        if (Math.abs(drift) > 3000) {
+          state.deathAnchorGame = apiMs;
+          state.deathAnchorWall = now;
+          state.deathDriftRate  = 0;
+        } else {
+          state.deathDriftRate  = Math.max(-0.02, Math.min(0.02, drift / 1000));
+          state.deathAnchorGame = apiMs;
+          state.deathAnchorWall = now;
+        }
+      }
+      state.dead = true;
+    } else {
+      state.dead            = false;
+      state.deathAnchorGame = null;
+      state.deathAnchorWall = null;
+      state.deathDriftRate  = 0;
+    }
+  }
+
+  function dbgStatus(msg) {
+    const el = document.getElementById('dbg-status');
+    if (el) el.textContent = msg;
+  }
+
+  /* ── Mid panel team stats ── */
+  function fmtTeamStat(n) {
+    if (n <= 0) return '--';
+    if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+    if (n >= 1000)    return (n / 1000).toFixed(1) + 'K';
+    return String(n);
+  }
+
+  function _updateMidPanel(side, campList, campId, fallback) {
+    const camp = campList.find(c => c.campid === campId);
+    if (!camp) return;
+
+    const players = ['seat_1','seat_2','seat_3','seat_4','seat_5']
+      .map(k => camp[k]).filter(Boolean);
+
+    const teamName = camp.team_simple_name || fallback;
+
+    const logoEl = document.getElementById(`mp-${side}-logo`);
+    if (logoEl) {
+      const newSrc = `logo/${teamName}.png`;
+      if (!logoEl.src.endsWith(newSrc)) {
+        logoEl.onerror = () => { logoEl.onerror = null; logoEl.src = `logo/${fallback}.png`; };
+        logoEl.src = newSrc;
+      }
+    }
+
+    const nameEl = document.getElementById(`mp-${side}-name`);
+    if (nameEl) nameEl.textContent = teamName;
+
+    let totalDmg = 0, totalTaken = 0, totalCtrl = 0, totalGold = 0;
+    players.forEach(p => {
+      totalDmg   += p.total_damage    || 0;
+      totalTaken += p.total_hurt      || 0;
+      totalCtrl  += p.control_time_ms || 0;
+      totalGold  += p.gold            || 0;
+    });
+
+    const se = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+    se(`mp-${side}-dmg`,   fmtTeamStat(totalDmg));
+    se(`mp-${side}-taken`, fmtTeamStat(totalTaken));
+    se(`mp-${side}-ctrl`,  totalCtrl > 0 ? (totalCtrl / 1000).toFixed(2) + 's' : '--');
+    se(`mp-${side}-gold`,  fmtTeamStat(totalGold));
+  }
+
+  function updateMidPanels(campList) {
+    _updateMidPanel('left',  campList, isSwapped ? 2 : 1, 'TLPH');
+    _updateMidPanel('right', campList, isSwapped ? 1 : 2, 'RORA');
+  }
+
+  async function pollSubInfo() {
+    let json;
+    try {
+      const res = await fetch(liveSubInfoUrl);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const text = await res.text();
+      json = JSON.parse(text.replace(/[\u00A0\u2028\u2029]/g, ' '));
+    } catch(e) {
+      dbgStatus(`fetch error: ${e.message}`);
+      return;
+    }
+    if (!json || json.code !== 0 || !json.data) {
+      dbgStatus(`bad response: code=${json?.code}`); return;
+    }
+    const campList = json.data.camp_list;
+    if (!Array.isArray(campList)) { dbgStatus('camp_list missing'); return; }
+
+    for (let i = 1; i <= 5; i++) {
+      const leftSeat  = isSwapped ? i + 5 : i;
+      const rightSeat = isSwapped ? i     : i + 5;
+      const lp = findPlayer(campList, leftSeat);
+      const rp = findPlayer(campList, rightSeat);
+      if (lp) applyPlayerData(i,     lp);
+      if (rp) applyPlayerData(i + 5, rp);
+    }
+
+    updateMidPanels(campList);
+
+    const ref = findPlayer(campList, isSwapped ? 6 : 1);
+    dbgStatus(ref ? `ok — level=${ref.level} hp=${ref.cur_health_point}/${ref.max_health_point}` : 'seat_1 not found');
+  }
+
+  pollSubInfo();
+  setInterval(pollSubInfo, POLL_MS);
+
+  /* ── Debug ── */
+  function debugHP(reduction) {
+    const s = playerStates[1];
+    setHP(s, Math.max(0, (s.hpCurrent - reduction) * s.maxHp), s.maxHp);
+  }
+  function debugHPReset() {
+    const s = playerStates[1];
+    setHP(s, s.maxHp, s.maxHp);
+  }
+
+  const DBG_ITEMS         = [2302, 3105, 3101, 2101, 1104, 1103];
+  const DBG_COMBINE_ITEMS = [3422, 3007, 3001, 2013, 3009, 2001];
+  let dbgEquip = Array(6).fill({ value: 9999 });
+
+  function debugAddItem() {
+    const emptyIdx = dbgEquip.findIndex(item => item.value === 9999);
+    if (emptyIdx === -1) return;
+    dbgEquip = [...dbgEquip];
+    dbgEquip[emptyIdx] = { value: DBG_ITEMS[emptyIdx % DBG_ITEMS.length] };
+    updateItems(playerStates[1], dbgEquip);
+  }
+
+  function debugCombineItem() {
+    const filled = dbgEquip.reduce((acc, item, i) => { if (item.value !== 9999) acc.push(i); return acc; }, []);
+    if (filled.length < 2) return;
+    const numSources = Math.min(filled.length - 1, 2);
+    const destIdx    = filled[0];
+    const srcIndices = filled.slice(1, numSources + 1);
+    dbgEquip = [...dbgEquip];
+    srcIndices.forEach(i => { dbgEquip[i] = { value: 9999 }; });
+    dbgEquip[destIdx] = { value: DBG_COMBINE_ITEMS[destIdx % DBG_COMBINE_ITEMS.length] };
+    updateItems(playerStates[1], dbgEquip);
+  }
+
+  function debugClearItems() {
+    dbgEquip = Array(6).fill({ value: 9999 });
+    playerStates[1].equipState = Array(6).fill('9999');
+    updateItems(playerStates[1], dbgEquip);
+  }
+
+  /* ── Death timer debug ── */
+  let _deathDebugInterval = null;
+
+  function _dbgDeathStatus(msg) {
+    const el = document.getElementById('dbg-death-status');
+    if (el) el.textContent = msg;
+  }
+
+  function debugDeath() {
+    const n    = parseInt(document.getElementById('dbg-death-plate').value);
+    const secs = parseInt(document.getElementById('dbg-death-secs').value) || 10;
+    const s    = playerStates[n];
+    if (!s) return;
+
+    // Anchor the countdown now
+    s.dead            = true;
+    s.deathAnchorGame = secs * 1000;
+    s.deathAnchorWall = Date.now();
+    s.deathDriftRate  = 0;
+    _dbgDeathStatus(`P${n} dying — ${secs}s`);
+
+    // Simulate API ticks decrementing revive_left_time
+    clearInterval(_deathDebugInterval);
+    let remaining = secs;
+    _deathDebugInterval = setInterval(() => {
+      remaining--;
+      if (remaining <= 0) {
+        clearInterval(_deathDebugInterval);
+        debugRevive(n);
+        return;
+      }
+      // Re-apply smooth correction exactly as applyPlayerData would
+      const apiMs  = remaining * 1000;
+      const now    = Date.now();
+      const elapsed = now - s.deathAnchorWall;
+      const localMs = s.deathAnchorGame - elapsed * (1 + s.deathDriftRate);
+      const drift   = localMs - apiMs;
+      if (Math.abs(drift) > 3000) {
+        s.deathAnchorGame = apiMs; s.deathAnchorWall = now; s.deathDriftRate = 0;
+      } else {
+        s.deathDriftRate  = Math.max(-0.02, Math.min(0.02, drift / 1000));
+        s.deathAnchorGame = apiMs; s.deathAnchorWall = now;
+      }
+      _dbgDeathStatus(`P${n} dying — ${remaining}s (drift ${drift.toFixed(0)}ms)`);
+    }, 1000);
+  }
+
+  function debugRevive(n) {
+    n = n || parseInt(document.getElementById('dbg-death-plate').value);
+    const s = playerStates[n];
+    if (!s) return;
+    clearInterval(_deathDebugInterval);
+    s.dead = false; s.deathAnchorGame = null; s.deathAnchorWall = null; s.deathDriftRate = 0;
+    _dbgDeathStatus(`P${n} revived`);
+  }
+
+  /* ── EKG ── */
+  const EKG_FREQ  = 3.95;
+  const EKG_LW    = 1.5;
+  const PATH_LEN  = 200;
+  const pathParts = new Array(PATH_LEN);
+
+  const ekgStates = Array.from({length: 11}, (_, n) => {
+    if (n === 0) return null;
+    return {
+      bpm: 90, connected: true,
+      phase: Math.random(),
+      points: Array(PATH_LEN).fill(14),
+      scrollBuffer: 0,
+      reversed: n >= 6,
+      pathEl:  document.getElementById(`p${n}-ekg-path`),
+      heartEl: document.getElementById(`p${n}-heart-path`),
+      valEl:   document.getElementById(`p${n}-bpm`),
+      lastStroke: null,
+    };
+  });
+
+  const bpmColorCache = {};
+  function bpmColor(bpm) {
+    const key = bpm | 0;
+    if (bpmColorCache[key]) return bpmColorCache[key];
+    const green  = { r:10,  g:146, b:0   };
+    const orange = { r:230, g:100, b:0   };
+    const red    = { r:210, g:0,   b:30  };
+    const t = Math.max(0, Math.min(1, (bpm - 60) / 60));
+    const a = t < 0.5 ? green  : orange;
+    const b = t < 0.5 ? orange : red;
+    const u = t < 0.5 ? t * 2  : (t - 0.5) * 2;
+    const result = `rgb(${Math.round(a.r+(b.r-a.r)*u)},${Math.round(a.g+(b.g-a.g)*u)},${Math.round(a.b+(b.b-a.b)*u)})`;
+    bpmColorCache[key] = result;
+    return result;
+  }
+
+  function getHeartY(phase, bpm) {
+    const b = 14;
+    if (bpm <= 0) return b;
+    if (phase > 0.10 && phase < 0.20)
+      return b - Math.sin((phase - 0.10) * 10 * Math.PI) * 3;
+    if (phase > 0.22 && phase < 0.30) {
+      const q = (phase - 0.22) / 0.08;
+      return b - Math.sin(q * 2 * Math.PI) * 13;
+    }
+    if (phase > 0.45 && phase < 0.65)
+      return b - Math.sin((phase - 0.45) * 5 * Math.PI) * 4;
+    return b;
+  }
+
+  function buildEkgPath(pts) {
+    pathParts[0] = `M 0 ${pts[0]}`;
+    const step = 400 / (PATH_LEN - 1);
+    for (let i = 1; i < PATH_LEN; i++)
+      pathParts[i] = `L ${(i * step).toFixed(1)} ${pts[i]}`;
+    return pathParts.join(' ');
+  }
+
+  function setEkgDisplay() {
+    for (let n = 1; n <= 10; n++) {
+      const p = ekgStates[n];
+      const active = p.bpm > 0 && p.connected;
+      const col = active ? bpmColor(p.bpm) : '#2a2a2a';
+      p.valEl.textContent = active ? p.bpm : '--';
+      p.valEl.style.color = col;
+      p.heartEl.setAttribute('fill', col);
+      if (col !== p.lastStroke) {
+        p.pathEl.setAttribute('stroke', col);
+        p.lastStroke = col;
+      }
+    }
+  }
+
+  let ekgLast = 0;
+  function animateEkg(ts) {
+    const dt = (ts - (ekgLast || ts)) / 1000;
+    ekgLast = ts;
+    for (let n = 1; n <= 10; n++) {
+      const p = ekgStates[n];
+      if (!p || !p.pathEl) continue;
+      const active = p.bpm > 0 && p.connected;
+      if (active) p.phase = (p.phase + (p.bpm / 60) * dt) % 1;
+      p.scrollBuffer += dt * 60 * EKG_FREQ;
+      while (p.scrollBuffer >= 1) {
+        const y = getHeartY(p.phase, active ? p.bpm : 0);
+        if (p.reversed) { p.points.unshift(y); p.points.pop(); }
+        else             { p.points.push(y);   p.points.shift(); }
+        p.scrollBuffer -= 1;
+      }
+      p.pathEl.setAttribute('d', buildEkgPath(p.points));
+      p.pathEl.setAttribute('stroke-width', EKG_LW);
+      const col = active ? bpmColor(p.bpm) : '#2a2a2a';
+      if (col !== p.lastStroke) {
+        p.pathEl.setAttribute('stroke', col);
+        p.lastStroke = col;
+      }
+      let beat = 0;
+      if (active && p.phase >= 0.22 && p.phase <= 0.50)
+        beat = Math.pow(1 - (p.phase - 0.22) / 0.28, 4);
+      const heartSvg = p.heartEl && p.heartEl.closest('svg');
+      if (heartSvg) heartSvg.style.transform = `scale(${(1 + beat * 0.4).toFixed(3)})`;
+    }
+
+    /* ── Death timer render ── */
+    const now = Date.now();
+    for (let n = 1; n <= 10; n++) {
+      const ds = playerStates[n];
+      if (!ds || !ds.deathTimerEl || !ds.heroIconEl) continue;
+
+      let isDead = false;
+      if (ds.deathAnchorGame !== null) {
+        const revMs = ds.deathAnchorGame - (now - ds.deathAnchorWall) * (1 + ds.deathDriftRate);
+        if (revMs > 100) {
+          isDead = true;
+          ds.deathTimerEl.textContent = Math.ceil(revMs / 1000);
+        }
+      }
+
+      if (isDead !== ds.prevDead) {
+        if (isDead) {
+          ds.heroIconEl.classList.add('dead');
+          ds.heroIconEl.classList.remove('reviving');
+          void ds.heroIconEl.offsetWidth;
+          ds.heroIconEl.classList.add('dying');
+          setTimeout(() => ds.heroIconEl.classList.remove('dying'), 650);
+        } else {
+          ds.heroIconEl.classList.remove('dying', 'dead');
+          void ds.heroIconEl.offsetWidth;
+          ds.heroIconEl.classList.add('reviving');
+          setTimeout(() => ds.heroIconEl.classList.remove('reviving'), 900);
+        }
+        ds.prevDead = isDead;
+      }
+
+      if (isDead) ds.deathTimerEl.classList.add('active');
+      else        ds.deathTimerEl.classList.remove('active');
+    }
+
+    requestAnimationFrame(animateEkg);
+  }
+  requestAnimationFrame(animateEkg);
+
+  async function pollFeed() {
+    try {
+      const res = await fetch(liveFeedUrl);
+      if (!res.ok) throw new Error();
+      const feed = await res.json();
+      if (Array.isArray(feed)) {
+        for (let i = 1; i <= 10; i++) {
+          const entry = feed.find(e => e.slot === `player${i}`);
+          if (!entry) continue;
+          /* in SWAP: player1-5 go to plates 6-10, player6-10 go to plates 1-5 */
+          const plateNum = isSwapped ? (i <= 5 ? i + 5 : i - 5) : i;
+          const ekg = ekgStates[plateNum];
+          if (!ekg) continue;
+          ekg.bpm       = parseInt(entry.bpm) || 0;
+          ekg.connected = entry.status === 'ok';
+        }
+        setEkgDisplay();
+      }
+    } catch {}
+  }
+  setEkgDisplay();
+  pollFeed();
+  setInterval(pollFeed, POLL_MS);
+
+  /* ── Debug panel toggle ── */
+  document.addEventListener('keydown', e => {
+    if (e.key === '`') {
+      document.getElementById('debug-panel').classList.toggle('visible');
+    }
+  });
+</script>
+</body>
+</html>
