@@ -119,10 +119,22 @@ const ctx    = canvas.getContext('2d');
 // ── State ─────────────────────────────────────────────────────────────────────
 let level      = 0;
 let overcharge = 0;       // presses past BASE_LEVEL (0-4 = distortion, 5 = break)
-let breaking   = false;
-let breakFrame = 0;
+let breaking    = false;
+let breakFrame  = 0;
+let breakFrozen = false;
 const BREAK_TOTAL  = 100;
 const BREAK_THRESH = 5;
+
+let malfPress    = 0;       // presses while frozen
+let dropping     = false;   // drop-and-bounce animation
+let dropFrame    = 0;
+let dropStartVals = [];     // displayA/B captured at drop start
+const DROP_TOTAL      = 80;
+const MALF_DROP_THRESH = 3;
+
+let fading    = false;      // fade-to-black after bounce
+let fadeFrame = 0;
+const FADE_TOTAL = 50;
 
 let throbPhase = 0, throbMult = 0;
 let lastIdleTime = 0, idleTick = 0;
@@ -225,58 +237,30 @@ function drawTextOverlay() {
   ctx.save();
   ctx.textBaseline = 'alphabetic';
 
+  const fs = Math.round(displayFontSize);
+  ctx.font      = `${fs}px Anton, sans-serif`;
+  ctx.textAlign = 'center';
+
+  let intensity = 0;
   if (breaking) {
-    // Per-letter: shake while waiting, explode outward+toward-viewer when released
-    const fs = letters[0] ? (letters[0].fontSize || 100) : 100;
-    ctx.font      = `${fs}px Anton, sans-serif`;
-    ctx.textAlign = 'left';
-
-    for (const l of letters) {
-      if (l.y > CANVAS_H + 160) continue; // off screen
-      let dx = l.x, dy = l.y, da = l.angle, sc = l.scale;
-
-      if (l.delay > 0) {
-        const sh = 18 + breakFrame * 0.25;
-        dx += (Math.random() - 0.5) * sh;
-        dy += (Math.random() - 0.5) * sh;
-      }
-
-      // Fade by y position (original), not scale
-      const alpha = l.delay > 0 ? 1.0
-        : Math.max(0, 1 - Math.max(0, dy - CANVAS_H * 0.55) / (CANVAS_H * 0.45));
-      if (alpha <= 0) continue;
-
-      ctx.save();
-      ctx.globalAlpha = alpha;
-      ctx.translate(dx + l.w * sc / 2, dy);
-      ctx.scale(sc, sc);
-      ctx.rotate(da);
-      ctx.strokeStyle = 'rgba(0,0,0,0.8)';
-      ctx.lineWidth   = 5 / sc;
-      ctx.fillStyle   = '#ffffff';
-      ctx.strokeText(l.char, -l.w / 2, 0);
-      ctx.fillText(l.char,   -l.w / 2, 0);
-      ctx.restore();
-    }
-  } else {
-    // Growing font + shake
-    const fs = Math.round(displayFontSize);
-    ctx.font      = `${fs}px Anton, sans-serif`;
-    ctx.textAlign = 'center';
-
-    let intensity = 0;
-    if      (overcharge > 0)        intensity = 16 + overcharge * 11 + throbMult * 16;
-    else if (level === BASE_LEVEL)  intensity = 10 + throbMult * 16;
-    else if (level > 0)             intensity = level * 1.5;
-    const sx = intensity > 0 ? (Math.random() - 0.5) * 2 * intensity : 0;
-    const sy = intensity > 0 ? (Math.random() - 0.5) * 2 * intensity : 0;
-
-    ctx.strokeStyle = 'rgba(0,0,0,0.9)';
-    ctx.lineWidth   = 7;
-    ctx.fillStyle   = '#ffffff';
-    ctx.strokeText(TEXT_STR, CANVAS_W / 2 + sx, TEXT_Y_BASE + sy);
-    ctx.fillText(TEXT_STR,   CANVAS_W / 2 + sx, TEXT_Y_BASE + sy);
+    intensity = breakFrozen ? 5 : 22;
+  } else if (dropping) {
+    intensity = (1 - dropFrame / DROP_TOTAL) * 8;
+  } else if (overcharge > 0) {
+    intensity = 16 + overcharge * 11 + throbMult * 16;
+  } else if (level === BASE_LEVEL) {
+    intensity = 10 + throbMult * 16;
+  } else if (level > 0) {
+    intensity = level * 1.5;
   }
+  const sx = intensity > 0 ? (Math.random() - 0.5) * 2 * intensity : 0;
+  const sy = intensity > 0 ? (Math.random() - 0.5) * 2 * intensity : 0;
+
+  ctx.strokeStyle = 'rgba(0,0,0,0.9)';
+  ctx.lineWidth   = 7;
+  ctx.fillStyle   = '#ffffff';
+  ctx.strokeText(TEXT_STR, CANVAS_W / 2 + sx, TEXT_Y_BASE + sy);
+  ctx.fillText(TEXT_STR,   CANVAS_W / 2 + sx, TEXT_Y_BASE + sy);
 
   ctx.globalAlpha = 1.0;
   ctx.restore();
@@ -409,84 +393,49 @@ function applyOverchargeFlicker() {
   ctx.globalAlpha = 1.0;
 }
 
-// Break animation
+// Break animation — chaos then freeze (stays frozen until drop is triggered)
 function applyBreakEffect() {
-  const t        = breakFrame / BREAK_TOTAL;          // 0→1
-  const envelope = Math.sin(t * Math.PI);             // 0→1→0
-  const dieT     = Math.max(0, (t - 0.55) / 0.45);   // 0 in first 55%, then 0→1
-
-  // Horizontal tear bands
-  const tearCount = 3 + Math.floor(Math.random() * 7 * envelope);
-  for (let i = 0; i < tearCount; i++) {
-    const y  = Math.random() * CANVAS_H;
-    const bh = 1 + Math.random() * 8 * envelope;
-    ctx.globalAlpha = 0.55 + Math.random() * 0.45;
-    ctx.fillStyle   = Math.random() < 0.65 ? '#ff1800' : '#ffffff';
-    ctx.fillRect(0, y, CANVAS_W, bh);
-  }
-
-  // Fast strobe — white
-  const strobeW = Math.abs(Math.sin(breakFrame * 1.4));
-  if (strobeW > 0.65 && envelope > 0.15) {
-    ctx.globalAlpha = (strobeW - 0.65) / 0.35 * 0.85 * envelope;
-    ctx.fillStyle   = '#ffffff';
-    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
-  }
-
-  // Fast strobe — red
-  const strobeR = Math.abs(Math.sin(breakFrame * 0.9 + 1.1));
-  if (strobeR > 0.60 && envelope > 0.25) {
-    ctx.globalAlpha = (strobeR - 0.60) / 0.40 * 0.55 * envelope;
-    ctx.fillStyle   = '#cc0000';
-    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
-  }
-
-  // Dying — segments going dark from top down
-  if (dieT > 0) {
-    const deadSegs = Math.floor(dieT * SEGS);
-    for (let m = 0; m < METER_COUNT; m++) {
-      const bx   = m * SHELL_W;
-      const colAx = bx + PAD_X + SCALE_W;
-      const colBx = colAx + COL_W + TRACK_GAP;
-      ctx.fillStyle = '#0a0a0a';
-      // Kill top deadSegs + random flicker on next few
-      for (let i = SEGS - 1; i >= SEGS - deadSegs; i--) {
-        if (i < 0) break;
-        ctx.globalAlpha = 0.85 + Math.random() * 0.15;
-        ctx.fillRect(colAx, segYs[i], COL_W, SEG_H);
-        ctx.fillRect(colBx, segYs[i], COL_W, SEG_H);
-      }
-      // Flicker zone just below dead region
-      const flickerSeg = SEGS - 1 - deadSegs;
-      if (flickerSeg >= 0 && Math.random() < 0.6) {
-        ctx.globalAlpha = Math.random() * 0.9;
-        ctx.fillRect(colAx, segYs[flickerSeg], COL_W, SEG_H);
-        ctx.fillRect(colBx, segYs[flickerSeg], COL_W, SEG_H);
-      }
+  if (!breakFrozen) {
+    // Chaos phase: scanline glitches, frame counter advances
+    const chaos = Math.min(1, breakFrame / (BREAK_TOTAL * 0.35));
+    const numLines = 2 + Math.floor(chaos * 10);
+    for (let i = 0; i < numLines; i++) {
+      const y = Math.random() * CANVAS_H;
+      ctx.globalAlpha = 0.25 + Math.random() * 0.55;
+      ctx.fillStyle   = Math.random() < 0.55 ? '#ffffff' : '#0a0a0a';
+      ctx.fillRect(0, y, CANVAS_W, 1 + Math.floor(Math.random() * 4));
     }
+    if (Math.random() < chaos * 0.12) {
+      ctx.globalAlpha = 0.06 + chaos * 0.10;
+      ctx.fillStyle   = '#ffffff';
+      ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+    }
+    ctx.globalAlpha = 1.0;
+    breakFrame++;
+    // breakFrozen is set in masterLoop when bt >= 0.35 — no auto-reset here
+  } else {
+    // Frozen: same scanline glitches continue — malfunction persists
+    const numLines = 4 + Math.floor(Math.random() * 8);
+    for (let i = 0; i < numLines; i++) {
+      const y = Math.random() * CANVAS_H;
+      ctx.globalAlpha = 0.25 + Math.random() * 0.55;
+      ctx.fillStyle   = Math.random() < 0.55 ? '#ffffff' : '#0a0a0a';
+      ctx.fillRect(0, y, CANVAS_W, 1 + Math.floor(Math.random() * 4));
+    }
+    ctx.globalAlpha = 1.0;
+    // No breakFrame increment, no reset — awaiting drop trigger
   }
+}
 
-  // Final fade to black
-  if (dieT > 0.6) {
-    ctx.globalAlpha = (dieT - 0.6) / 0.4 * 0.95;
-    ctx.fillStyle   = '#000000';
-    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
-  }
-
-  ctx.globalAlpha = 1.0;
-  breakFrame++;
-
-  if (breakFrame >= BREAK_TOTAL) {
-    breaking    = false;
-    breakFrame  = 0;
-    overcharge  = 0;
-    level       = 0;
-    throbPhase  = 0;
-    throbMult   = 0;
-    for (const m of meterData) m.displayA = m.displayB = m.idleTargetA = m.idleTargetB = 0;
-    displayFontSize = 80;
-    resetLetterFall();
-  }
+// Drop-and-bounce animation
+function startDrop() {
+  dropStartVals = meterData.map(m => ({ a: m.displayA, b: m.displayB }));
+  dropping     = true;
+  dropFrame    = 0;
+  breaking     = false;
+  breakFrozen  = false;
+  malfPress    = 0;
+  startLoop();
 }
 
 function drawFrame() {
@@ -498,6 +447,12 @@ function drawFrame() {
   if (overcharge > 0 && !breaking) applyOverchargeFlicker();
   if (breaking)                    applyBreakEffect();
   drawTextOverlay();
+  if (fading) {
+    ctx.globalAlpha = fadeFrame / FADE_TOTAL;
+    ctx.fillStyle   = '#000000';
+    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+    ctx.globalAlpha = 1.0;
+  }
 }
 
 // ── Master loop ───────────────────────────────────────────────────────────────
@@ -517,13 +472,25 @@ function masterLoop(ts) {
     throbMult = Math.min(1, Math.max(0, raw)) * dieMul;
   }
 
+  // Break: bars keep randomizing every frame throughout (chaos AND frozen)
+  if (breaking) {
+    const bt = breakFrame / BREAK_TOTAL;
+    if (!breakFrozen && bt >= 0.35) breakFrozen = true;
+    for (const m of meterData) {
+      const ra = Math.random();
+      m.displayA = ra < 0.12 ? 0 : ra < 0.22 ? SEGS : Math.random() * SEGS;
+      const rb = Math.random();
+      m.displayB = rb < 0.12 ? 0 : rb < 0.22 ? SEGS : Math.random() * SEGS;
+    }
+  }
+
   // Idle drift
   if (ts - lastIdleTime >= 30) {
     lastIdleTime = ts;
     idleTick++;
-    if (level === BASE_LEVEL || overcharge > 0 || breaking) {
+    if (level === BASE_LEVEL || overcharge > 0) {
       for (const m of meterData) m.displayA = m.displayB = SEGS;
-    } else {
+    } else if (!breaking) {
       if (idleTick % 26 === 0) {
         const base   = levelToSegs(level);
         const jitter = level === 0 ? 0 : Math.max(1, Math.round(level * 0.22));
@@ -540,11 +507,43 @@ function masterLoop(ts) {
     }
   }
 
-  if (!breaking) displayFontSize += (getTextFontSize() - displayFontSize) * 0.07;
-  if (breaking) updateLetters();
+  if (!breaking && !dropping) displayFontSize += (getTextFontSize() - displayFontSize) * 0.07;
+
+  // Drop-and-bounce: animate bars from frozen values to 0
+  if (dropping) {
+    const t = dropFrame / DROP_TOTAL;
+    let mult;
+    if (t < 0.45) {
+      const ft = t / 0.45;
+      mult = 1 - ft * ft * ft;                                          // cubic ease-in fall
+    } else {
+      const bt = (t - 0.45) / 0.55;
+      mult = 0.22 * Math.pow(1 - bt, 1.4) * Math.abs(Math.sin(bt * Math.PI * 5.5)); // bounce
+    }
+    for (let i = 0; i < METER_COUNT; i++) {
+      meterData[i].displayA = dropStartVals[i].a * mult;
+      meterData[i].displayB = dropStartVals[i].b * mult;
+    }
+    dropFrame++;
+    if (dropFrame >= DROP_TOTAL) {
+      dropping        = false; dropFrame = 0;
+      overcharge      = 0;    level      = 0;
+      throbPhase      = 0;    throbMult  = 0;
+      displayFontSize = 80;
+      for (const m of meterData) m.displayA = m.displayB = m.idleTargetA = m.idleTargetB = 0;
+      fading    = true;
+      fadeFrame = 0;
+    }
+  }
+
+  if (fading) {
+    fadeFrame++;
+    if (fadeFrame >= FADE_TOTAL) { fading = false; fadeFrame = 0; }
+  }
+
   drawFrame();
 
-  let alive = breaking || overcharge > 0 || level > 0;
+  let alive = breaking || dropping || fading || overcharge > 0 || level > 0;
   if (!alive) for (const m of meterData) {
     if (Math.round(m.displayA) > 0 || Math.round(m.displayB) > 0) { alive = true; break; }
   }
@@ -567,29 +566,39 @@ function setLevel(v) {
 }
 
 function pressPlus() {
-  if (breaking) return;
+  if (dropping) return;
+  if (breaking) {
+    // Frozen state: count presses toward drop trigger
+    if (breakFrozen) {
+      malfPress++;
+      if (malfPress >= MALF_DROP_THRESH) startDrop();
+    }
+    return;
+  }
   if (level < BASE_LEVEL) { setLevel(level + 1); return; }
   overcharge++;
   if (overcharge >= BREAK_THRESH) {
-    breaking   = true;
-    breakFrame = 0;
+    breaking    = true;
+    breakFrame  = 0;
+    breakFrozen = false;
     for (const m of meterData) m.displayA = m.displayB = SEGS;
-    startLetterFall();
   }
   startLoop();
 }
 
 function pressMinus() {
-  if (breaking) return;
+  if (breaking || dropping) return;
   if (overcharge > 0) { overcharge--; startLoop(); return; }
   setLevel(level - 1);
 }
 
 function pressClear() {
   breaking        = false; breakFrame = 0;
+  breakFrozen     = false; malfPress  = 0;
+  dropping        = false; dropFrame  = 0;
+  fading          = false; fadeFrame  = 0;
   overcharge      = 0;
   displayFontSize = 80;
-  resetLetterFall();
   setLevel(0);
 }
 
