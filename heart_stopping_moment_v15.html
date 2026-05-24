@@ -128,6 +128,13 @@ let throbPhase = 0, throbMult = 0;
 let lastIdleTime = 0, idleTick = 0;
 let rafId = null;
 
+// Text overlay
+const TEXT_STR  = 'SUPERFANS MAG-INGAY!';
+const TEXT_Y_BASE = 200;
+let textReady = false;
+let letters   = []; // {char,baseX,w,x,y,vy,vx,angle,av,delay,active}
+let displayFontSize = 80; // tweened toward getTextFontSize() each frame
+
 const meterData = Array.from({ length: METER_COUNT }, () => ({
   displayA: 0, displayB: 0, idleTargetA: 0, idleTargetB: 0,
 }));
@@ -135,6 +142,145 @@ const meterData = Array.from({ length: METER_COUNT }, () => ({
 function startLoop() { if (!rafId) rafId = requestAnimationFrame(masterLoop); }
 function stopLoop()  { if (rafId) { cancelAnimationFrame(rafId); rafId = null; } }
 function levelToSegs(lvl) { return Math.round((lvl / BASE_LEVEL) * SEGS); }
+
+// ── Text helpers ──────────────────────────────────────────────────────────────
+function getTextFontSize() {
+  // 80px at level 0 → 108px at max → +8px per overcharge step
+  const t = Math.min(level / BASE_LEVEL, 1);
+  return 80 + t * 28 + overcharge * 8;
+}
+
+function measureLetters() {
+  // Baseline measure at 80px so baseX coords are stable
+  ctx.save();
+  ctx.font         = '80px Anton, sans-serif';
+  ctx.textBaseline = 'alphabetic';
+  ctx.textAlign    = 'left';
+  const chars = [...TEXT_STR];
+  const ws    = chars.map(c => ctx.measureText(c).width);
+  const total = ws.reduce((a, b) => a + b, 0);
+  let x = (CANVAS_W - total) / 2;
+  letters = chars.map((c, i) => {
+    const bx = x; x += ws[i];
+    return { char: c, baseX: bx, w: ws[i], x: bx, y: TEXT_Y_BASE,
+             vy: 0, vx: 0, scale: 1, scaleV: 0, angle: 0, av: 0,
+             delay: 0, active: false, fontSize: 80 };
+  });
+  textReady = true;
+  ctx.restore();
+}
+
+function startLetterFall() {
+  if (!textReady) return;
+  // Re-measure at the current tweened font size so explosion starts from correct positions
+  const fs = Math.round(displayFontSize);
+  ctx.save();
+  ctx.font         = `${fs}px Anton, sans-serif`;
+  ctx.textBaseline = 'alphabetic';
+  ctx.textAlign    = 'left';
+  const chars = [...TEXT_STR];
+  const ws    = chars.map(c => ctx.measureText(c).width);
+  const total = ws.reduce((a, b) => a + b, 0);
+  let x = (CANVAS_W - total) / 2;
+  for (let i = 0; i < letters.length; i++) {
+    const l  = letters[i];
+    l.x      = x; l.baseX = x;
+    l.w      = ws[i]; x += ws[i];
+    l.y      = TEXT_Y_BASE;
+    l.scale  = 1; l.angle = 0;
+    l.fontSize = fs;
+    l.active = true;
+    l.delay  = Math.floor(Math.random() * 40); // original stagger
+    l.vx     = (Math.random() - 0.5) * 5;      // original sideways drift
+    l.vy     = 1 + Math.random() * 4;           // original downward fall
+    l.scaleV = 0.018 + Math.random() * 0.018;  // subtle grow = toward viewer
+    l.av     = (Math.random() - 0.5) * 0.12;
+  }
+  ctx.restore();
+}
+
+function resetLetterFall() {
+  if (!textReady) return;
+  for (const l of letters) {
+    l.x = l.baseX; l.y = TEXT_Y_BASE;
+    l.vy = 0; l.vx = 0; l.scale = 1; l.scaleV = 0;
+    l.angle = 0; l.av = 0; l.delay = 0; l.active = false;
+  }
+}
+
+function updateLetters() {
+  for (const l of letters) {
+    if (!l.active) continue;
+    if (l.delay > 0) { l.delay--; continue; }
+    l.vy    += 0.85;       // gravity
+    l.scale += l.scaleV;  // steady grow = toward viewer
+    l.x     += l.vx;
+    l.y     += l.vy;
+    l.angle += l.av;
+  }
+}
+
+function drawTextOverlay() {
+  if (!textReady) return;
+  ctx.save();
+  ctx.textBaseline = 'alphabetic';
+
+  if (breaking) {
+    // Per-letter: shake while waiting, explode outward+toward-viewer when released
+    const fs = letters[0] ? (letters[0].fontSize || 100) : 100;
+    ctx.font      = `${fs}px Anton, sans-serif`;
+    ctx.textAlign = 'left';
+
+    for (const l of letters) {
+      if (l.y > CANVAS_H + 160) continue; // off screen
+      let dx = l.x, dy = l.y, da = l.angle, sc = l.scale;
+
+      if (l.delay > 0) {
+        const sh = 18 + breakFrame * 0.25;
+        dx += (Math.random() - 0.5) * sh;
+        dy += (Math.random() - 0.5) * sh;
+      }
+
+      // Fade by y position (original), not scale
+      const alpha = l.delay > 0 ? 1.0
+        : Math.max(0, 1 - Math.max(0, dy - CANVAS_H * 0.55) / (CANVAS_H * 0.45));
+      if (alpha <= 0) continue;
+
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.translate(dx + l.w * sc / 2, dy);
+      ctx.scale(sc, sc);
+      ctx.rotate(da);
+      ctx.strokeStyle = 'rgba(0,0,0,0.8)';
+      ctx.lineWidth   = 5 / sc;
+      ctx.fillStyle   = '#ffffff';
+      ctx.strokeText(l.char, -l.w / 2, 0);
+      ctx.fillText(l.char,   -l.w / 2, 0);
+      ctx.restore();
+    }
+  } else {
+    // Growing font + shake
+    const fs = Math.round(displayFontSize);
+    ctx.font      = `${fs}px Anton, sans-serif`;
+    ctx.textAlign = 'center';
+
+    let intensity = 0;
+    if      (overcharge > 0)        intensity = 16 + overcharge * 11 + throbMult * 16;
+    else if (level === BASE_LEVEL)  intensity = 10 + throbMult * 16;
+    else if (level > 0)             intensity = level * 1.5;
+    const sx = intensity > 0 ? (Math.random() - 0.5) * 2 * intensity : 0;
+    const sy = intensity > 0 ? (Math.random() - 0.5) * 2 * intensity : 0;
+
+    ctx.strokeStyle = 'rgba(0,0,0,0.9)';
+    ctx.lineWidth   = 7;
+    ctx.fillStyle   = '#ffffff';
+    ctx.strokeText(TEXT_STR, CANVAS_W / 2 + sx, TEXT_Y_BASE + sy);
+    ctx.fillText(TEXT_STR,   CANVAS_W / 2 + sx, TEXT_Y_BASE + sy);
+  }
+
+  ctx.globalAlpha = 1.0;
+  ctx.restore();
+}
 
 // ── Drawing ───────────────────────────────────────────────────────────────────
 function drawColumn(colX, vis) {
@@ -338,6 +484,8 @@ function applyBreakEffect() {
     throbPhase  = 0;
     throbMult   = 0;
     for (const m of meterData) m.displayA = m.displayB = m.idleTargetA = m.idleTargetB = 0;
+    displayFontSize = 80;
+    resetLetterFall();
   }
 }
 
@@ -349,6 +497,7 @@ function drawFrame() {
   for (let m = 0; m < METER_COUNT; m++) drawMeter(m, meterData[m]);
   if (overcharge > 0 && !breaking) applyOverchargeFlicker();
   if (breaking)                    applyBreakEffect();
+  drawTextOverlay();
 }
 
 // ── Master loop ───────────────────────────────────────────────────────────────
@@ -391,6 +540,8 @@ function masterLoop(ts) {
     }
   }
 
+  if (!breaking) displayFontSize += (getTextFontSize() - displayFontSize) * 0.07;
+  if (breaking) updateLetters();
   drawFrame();
 
   let alive = breaking || overcharge > 0 || level > 0;
@@ -423,6 +574,7 @@ function pressPlus() {
     breaking   = true;
     breakFrame = 0;
     for (const m of meterData) m.displayA = m.displayB = SEGS;
+    startLetterFall();
   }
   startLoop();
 }
@@ -434,8 +586,10 @@ function pressMinus() {
 }
 
 function pressClear() {
-  breaking   = false; breakFrame = 0;
-  overcharge = 0;
+  breaking        = false; breakFrame = 0;
+  overcharge      = 0;
+  displayFontSize = 80;
+  resetLetterFall();
   setLevel(0);
 }
 
@@ -447,7 +601,7 @@ function pressClear() {
   setLevel(0);
 })();
 
-document.fonts.ready.then(() => drawFrame());
+document.fonts.ready.then(() => { measureLetters(); drawFrame(); });
 
 // ── SSE + Debug panel ─────────────────────────────────────────────────────────
 const DEFAULT_SERVER = '172.16.10.50:3000';
