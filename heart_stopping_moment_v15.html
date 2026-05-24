@@ -536,14 +536,11 @@ function masterLoop(ts) {
     }
   }
 
-  if (fading) {
-    fadeFrame++;
-    if (fadeFrame >= FADE_TOTAL) { fading = false; fadeFrame = 0; }
-  }
+  if (fading) fadeFrame = Math.min(fadeFrame + 1, FADE_TOTAL);
 
   drawFrame();
 
-  let alive = breaking || dropping || fading || overcharge > 0 || level > 0;
+  let alive = breaking || dropping || (fading && fadeFrame < FADE_TOTAL) || overcharge > 0 || level > 0;
   if (!alive) for (const m of meterData) {
     if (Math.round(m.displayA) > 0 || Math.round(m.displayB) > 0) { alive = true; break; }
   }
