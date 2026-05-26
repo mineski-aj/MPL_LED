@@ -509,7 +509,7 @@
   .mp-logo-wrap {
     flex: 0 0 207px;
     margin-top: 36px;
-    width: 220px;
+    width: 150px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -520,6 +520,7 @@
     height: 100%;
     object-fit: contain;
   }
+  .mp-logo[src=""], .mp-logo:not([src]) { visibility: hidden; }
   .mp-team-name {
     flex: 0 0 71px;
     margin-top: 40px;
@@ -592,9 +593,9 @@
   <!-- Mid panels -->
   <div class="mid-panel" id="mid-left">
     <div class="mp-logo-wrap">
-      <img class="mp-logo" id="mp-left-logo" src="logo/TLPH.png" onerror="this.onerror=null;this.src='logo/TLPH.png'">
+      <img class="mp-logo" id="mp-left-logo" src="" onerror="this.onerror=null">
     </div>
-    <div class="mp-team-name" id="mp-left-name">TLPH</div>
+    <div class="mp-team-name" id="mp-left-name"></div>
     <div class="mp-stats">
       <div class="mp-stat-group">
         <div class="mp-stat-title">TOTAL<br>DAMAGE DEALT</div>
@@ -616,9 +617,9 @@
   </div>
   <div class="mid-panel" id="mid-right">
     <div class="mp-logo-wrap">
-      <img class="mp-logo" id="mp-right-logo" src="logo/RORA.png" onerror="this.onerror=null;this.src='logo/RORA.png'">
+      <img class="mp-logo" id="mp-right-logo" src="" onerror="this.onerror=null">
     </div>
-    <div class="mp-team-name" id="mp-right-name">RORA</div>
+    <div class="mp-team-name" id="mp-right-name"></div>
     <div class="mp-stats">
       <div class="mp-stat-group">
         <div class="mp-stat-title">TOTAL<br>DAMAGE DEALT</div>
@@ -641,28 +642,28 @@
 
   <!-- Left column: Players 1–5 -->
   <div class="plate" id="plate-1">
-    <div class="_20900"    id="p1-gold">10562</div>
+    <div class="_20900"    id="p1-gold">--</div>
     <div class="KILL">KILL</div>
     <div class="DEATH">DEATH</div>
     <div class="ASSIST">ASSIST</div>
-    <div class="_kill-val"  id="p1-kills">7</div>
-    <div class="_death-val" id="p1-deaths">8</div>
-    <div class="_31"        id="p1-assists">6</div>
-    <div class="SUPERMARCO"><span class="name-inner" id="p1-name">SuperAditTzy</span></div>
+    <div class="_kill-val"  id="p1-kills">--</div>
+    <div class="_death-val" id="p1-deaths">--</div>
+    <div class="_31"        id="p1-assists">--</div>
+    <div class="SUPERMARCO"><span class="name-inner" id="p1-name">--</span></div>
     <div class="damage-taken-label">DAMAGE TAKEN</div>
-    <div class="damage-taken-val" id="p1-dmg-taken">98840</div>
+    <div class="damage-taken-val" id="p1-dmg-taken">--</div>
     <div class="ekg-zone-led">
       <svg width="100%" height="28" viewBox="0 0 400 28" preserveAspectRatio="none">
         <path id="p1-ekg-path" class="path-line" d=""/>
       </svg>
     </div>
     <div class="heart-bpm"><svg viewBox="0 0 32 29.6" width="20" height="20"><path id="p1-heart-path" fill="rgb(255,1,1)" d="M16 29.6C16 29.6 0 19 0 9.4A9.4 9.4 0 0 1 16 3.5 9.4 9.4 0 0 1 32 9.4C32 19 16 29.6 16 29.6Z"/></svg></div>
-    <div class="_999"       id="p1-bpm">90</div>
+    <div class="_999"       id="p1-bpm"></div>
     <div class="hero-icon" id="p1-hero"><img src="" alt="" onerror="this.style.display='none'"><div class="death-timer" id="p1-death-timer"></div></div>
     <div class="spell-icon" id="p1-spell"><img src="" alt="" onerror="this.style.display='none'"></div>
     <div class="hp-bar-wrap" id="p1-hp-wrap">
-      <div class="hp-ghost" id="p1-hp-ghost" style="width:255px"></div>
-      <div class="hp-fill"  id="p1-hp-fill"  style="width:255px"></div>
+      <div class="hp-ghost" id="p1-hp-ghost" style="width:0"></div>
+      <div class="hp-fill"  id="p1-hp-fill"  style="width:0"></div>
     </div>
     <div class="level-circle" id="p1-level">
       <svg viewBox="0 0 58 58" xmlns="http://www.w3.org/2000/svg">
@@ -672,7 +673,7 @@
           class="level-arc" id="p1-level-arc" transform="rotate(-90 29 29)"/>
         <circle cx="29" cy="29" r="21" fill="white"/>
         <text x="29" y="29" text-anchor="middle" dominant-baseline="central"
-          fill="#161616" font-family="Anton" font-size="28" id="p1-level-text">1</text>
+          fill="#161616" font-family="Anton" font-size="28" id="p1-level-text"></text>
       </svg>
     </div>
     <div class="role-icon"><img src="role/EXP LANER.png" alt=""></div>
@@ -738,7 +739,7 @@
     <div class="_death-val" id="p4-deaths">--</div>
     <div class="_31" id="p4-assists">--</div>
     <div class="SUPERMARCO"><span class="name-inner" id="p4-name">--</span></div>
-    <div class="damage-taken-label">CONTROL TIME</div>
+    <div class="damage-taken-label" id="p4-ctrl-label">CONTROL TIME</div>
     <div class="damage-taken-val" id="p4-dmg-taken">--</div>
     <div class="ekg-zone-led"><svg width="100%" height="28" viewBox="0 0 400 28" preserveAspectRatio="none"><path id="p4-ekg-path" class="path-line" d=""/></svg></div>
     <div class="heart-bpm"><svg viewBox="0 0 32 29.6" width="20" height="20"><path id="p4-heart-path" fill="rgb(255,1,1)" d="M16 29.6C16 29.6 0 19 0 9.4A9.4 9.4 0 0 1 16 3.5 9.4 9.4 0 0 1 32 9.4C32 19 16 29.6 16 29.6Z"/></svg></div>
@@ -860,7 +861,7 @@
     <div class="_death-val" id="p9-deaths">--</div>
     <div class="_31" id="p9-assists">--</div>
     <div class="SUPERMARCO"><span class="name-inner" id="p9-name">--</span></div>
-    <div class="damage-taken-label">CONTROL TIME</div>
+    <div class="damage-taken-label" id="p9-ctrl-label">CONTROL TIME</div>
     <div class="damage-taken-val" id="p9-dmg-taken">--</div>
     <div class="ekg-zone-led"><svg width="100%" height="28" viewBox="0 0 400 28" preserveAspectRatio="none"><path id="p9-ekg-path" class="path-line" d=""/></svg></div>
     <div class="heart-bpm"><svg viewBox="0 0 32 29.6" width="20" height="20"><path id="p9-heart-path" fill="rgb(255,1,1)" d="M16 29.6C16 29.6 0 19 0 9.4A9.4 9.4 0 0 1 16 3.5 9.4 9.4 0 0 1 32 9.4C32 19 16 29.6 16 29.6Z"/></svg></div>
@@ -1292,7 +1293,20 @@
     document.getElementById(`p${n}-kills`).textContent     = player.kill_num   ?? '--';
     document.getElementById(`p${n}-deaths`).textContent    = player.dead_num   ?? '--';
     document.getElementById(`p${n}-assists`).textContent   = player.assist_num ?? '--';
-    document.getElementById(`p${n}-dmg-taken`).textContent = PLATE_STAT[n]?.(player) ?? '--';
+    if (n === 4 || n === 9) {
+      const ctrl = player.control_time_ms || 0;
+      const heal = player.total_heal || 0;
+      const lblEl = document.getElementById(`p${n}-ctrl-label`);
+      if (ctrl === 0 && heal > 0) {
+        if (lblEl) lblEl.textContent = 'TOTAL HEALING';
+        document.getElementById(`p${n}-dmg-taken`).textContent = heal;
+      } else {
+        if (lblEl) lblEl.textContent = 'CONTROL TIME';
+        document.getElementById(`p${n}-dmg-taken`).textContent = _ct(player);
+      }
+    } else {
+      document.getElementById(`p${n}-dmg-taken`).textContent = PLATE_STAT[n]?.(player) ?? '--';
+    }
 
     const nameEl = document.getElementById(`p${n}-name`);
     nameEl.textContent = player.name ?? '';
