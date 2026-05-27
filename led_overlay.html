@@ -1700,8 +1700,14 @@
         for (let i = 1; i <= 10; i++) {
           const entry = feed.find(e => e.slot === `player${i}`);
           if (!entry) continue;
-          /* in SWAP: player1-5 go to plates 6-10, player6-10 go to plates 1-5 */
-          const plateNum = isSwapped ? (i <= 5 ? i + 5 : i - 5) : i;
+          /* camp2 wristbands are labeled in reverse order, so mirror their side position */
+          let plateNum;
+          if (i <= 5) {
+            plateNum = isSwapped ? i + 5 : i;
+          } else {
+            const rev = 11 - i;            // 6→5, 7→4, 8→3, 9→2, 10→1
+            plateNum  = isSwapped ? rev : rev + 5;
+          }
           const ekg = ekgStates[plateNum];
           if (!ekg) continue;
           ekg.bpm       = parseInt(entry.bpm) || 0;
