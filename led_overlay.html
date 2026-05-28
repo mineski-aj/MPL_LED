@@ -1093,12 +1093,20 @@
       imgEl.onerror = () => { imgEl.src = 'items/99999.png'; };
     });
 
-    // track which old visual slots are being vacated by a slide
+    // match each new slot to its old slot, consuming each old slot at most once
+    // (handles duplicate item IDs — indexOf would always return the first occurrence)
+    const usedOld = new Set();
+    const oldJMap = newLayout.map(newId => {
+      if (newId === '9999') return -1;
+      for (let k = 0; k < oldIds.length; k++) {
+        if (oldIds[k] === newId && !usedOld.has(k)) { usedOld.add(k); return k; }
+      }
+      return -1;
+    });
+
     const slidingFrom = new Set();
-    newLayout.forEach((newId, j) => {
-      if (newId === '9999') return;
-      const oldJ = oldIds.indexOf(newId);
-      if (oldJ !== -1 && oldJ !== j) slidingFrom.add(oldJ);
+    oldJMap.forEach((oldJ, j) => {
+      if (newLayout[j] !== '9999' && oldJ !== -1 && oldJ !== j) slidingFrom.add(oldJ);
     });
 
     newLayout.forEach((newId, j) => {
@@ -1108,7 +1116,7 @@
         imgEl.style.transform  = '';
         return;
       }
-      const oldJ   = oldIds.indexOf(newId);
+      const oldJ   = oldJMap[j];
       const imgEl  = p.itemSlots[j].querySelector('img');
       const slotEl = p.itemSlots[j];
       if (oldJ !== -1 && oldJ !== j) {
@@ -1121,7 +1129,6 @@
           setTimeout(() => { imgEl.style.transition = ''; imgEl.style.transform = ''; }, 400);
         }));
       } else if (oldJ === -1 && !skipPop) {
-        // delay pop if a sliding item is vacating this slot to avoid visual overlap
         const delay = slidingFrom.has(j) ? 200 : 0;
         setTimeout(() => {
           slotEl.classList.remove('item-pop', 'item-combine');
@@ -1430,6 +1437,8 @@
     _updateMidPanel('right', campList, isSwapped ? 1 : 2, 'RORA');
   }
 
+  let lastBattleId = null;
+
   async function pollSubInfo() {
     let json;
     try {
@@ -1444,6 +1453,22 @@
     if (!json || json.code !== 0 || !json.data) {
       dbgStatus(`bad response: code=${json?.code}`); return;
     }
+
+    const battleId = json.data.battleid;
+    if (battleId && battleId !== lastBattleId) {
+      lastBattleId = battleId;
+      for (let n = 1; n <= 10; n++) {
+        const ps = playerStates[n];
+        if (!ps) continue;
+        ps.equipState = Array(6).fill('9999');
+        ps.itemSlots.forEach(slot => {
+          const img = slot.querySelector('img');
+          img.dataset.itemId = '9999';
+          img.src = 'items/99999.png';
+        });
+      }
+    }
+
     const campList = json.data.camp_list;
     if (!Array.isArray(campList)) { dbgStatus('camp_list missing'); return; }
 
