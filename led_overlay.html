@@ -995,19 +995,32 @@
   }
 
   /* ── Swap state ── */
-  let isSwapped = localStorage.getItem('ledSwap') === '1';
+  let isSwapped = false;
 
   function setSwap(swap) {
+    const changed = swap !== isSwapped;
     isSwapped = swap;
     localStorage.setItem('ledSwap', swap ? '1' : '0');
     document.getElementById('btn-home').className = swap ? 'dbg-btn'             : 'dbg-btn active-home';
     document.getElementById('btn-swap').className = swap ? 'dbg-btn active-swap' : 'dbg-btn';
+    if (changed) {
+      for (let i = 1; i <= 5; i++) {
+        const l = ekgStates[i], r = ekgStates[i + 5];
+        if (!l || !r) continue;
+        [l.bpm,      r.bpm]      = [r.bpm,      l.bpm];
+        [l.connected,r.connected]= [r.connected, l.connected];
+        [l.points,   r.points]   = [r.points,    l.points];
+        [l.phase,    r.phase]    = [r.phase,      l.phase];
+        [l.scrollBuffer, r.scrollBuffer] = [r.scrollBuffer, l.scrollBuffer];
+      }
+      setEkgDisplay();
+    }
     pollSubInfo();
     pollFeed();
   }
 
   /* apply persisted swap state on load */
-  setSwap(isSwapped);
+  setSwap(localStorage.getItem('ledSwap') === '1');
 
   /* ── SSE — remote HOME/SWAP via /led/home and /led/swap ── */
   let _sseSource = null, _sseRetry = null;
@@ -1700,14 +1713,8 @@
         for (let i = 1; i <= 10; i++) {
           const entry = feed.find(e => e.slot === `player${i}`);
           if (!entry) continue;
-          /* camp2 wristbands are labeled in reverse order, so mirror their side position */
-          let plateNum;
-          if (i <= 5) {
-            plateNum = isSwapped ? i + 5 : i;
-          } else {
-            const rev = 11 - i;            // 6→5, 7→4, 8→3, 9→2, 10→1
-            plateNum  = isSwapped ? rev : rev + 5;
-          }
+          /* always assign to fixed plates — swap is handled by setSwap's in-place ekgStates swap */
+          const plateNum = i <= 5 ? i : (11 - i) + 5;  // camp2 reversed: 6→10, 7→9, 8→8, 9→7, 10→6
           const ekg = ekgStates[plateNum];
           if (!ekg) continue;
           ekg.bpm       = parseInt(entry.bpm) || 0;
